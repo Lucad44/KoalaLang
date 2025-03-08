@@ -1,0 +1,7 @@
+# ninja log v6
+12	110	7619487020814913	CMakeFiles/KoalaLang.dir/src/variables.c.obj	75bae09283cfa043
+4	91	7619489799054452	CMakeFiles/KoalaLang.dir/src/lexer.c.obj	e98325d006afcfdc
+2	115	7619487020721229	CMakeFiles/KoalaLang.dir/src/main.c.obj	a800f4127bbbaeb1
+44	136	7619487021131523	CMakeFiles/KoalaLang.dir/src/interpreter.c.obj	1448b2ca18405cec
+26	141	7619487020962313	CMakeFiles/KoalaLang.dir/src/parser.c.obj	d9b24cfe24608016
+92	205	7619489799938662	KoalaLang.exe	6f01287efbb622c3

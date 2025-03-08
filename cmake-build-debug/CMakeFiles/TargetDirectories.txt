@@ -1,0 +1,3 @@
+C:/Users/lucad/CLionProjects/KoalaLang/cmake-build-debug/CMakeFiles/KoalaLang.dir
+C:/Users/lucad/CLionProjects/KoalaLang/cmake-build-debug/CMakeFiles/edit_cache.dir
+C:/Users/lucad/CLionProjects/KoalaLang/cmake-build-debug/CMakeFiles/rebuild_cache.dir
