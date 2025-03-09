@@ -9,14 +9,23 @@ typedef enum {
     NODE_BLOCK,
     NODE_EXPR_LITERAL,
     NODE_EXPR_VARIABLE,
-    NODE_EXPR_BINARY
+    NODE_EXPR_BINARY,
+    NODE_EXPR_POSTFIX
 } NodeType;
 
 typedef enum {
     OP_LESS,
     OP_GREATER,
-    OP_EQUAL
+    OP_EQUAL,
+    OP_NOT_EQUAL,
+    OP_LESS_EQUAL,
+    OP_GREATER_EQUAL
 } BinaryOperator;
+
+typedef enum {
+    OP_INC,
+    OP_DEC
+} PostfixOperator;
 
 typedef struct ASTNode ASTNode;
 
@@ -55,9 +64,19 @@ typedef struct {
 } VariableNode;
 
 typedef struct {
+    PostfixOperator op;
+    char *var_name;
+} PostfixExprNode;
+
+typedef struct {
     ASTNode *condition;
     ASTNode *body;
 } IfNode;
+
+typedef struct {
+    ASTNode *condition;
+    ASTNode *body;
+} WhileNode;
 
 struct ASTNode {
     NodeType type;
@@ -69,7 +88,9 @@ struct ASTNode {
         StrLiteralNode str_literal;
         VariableNode variable;
         IfNode if_stmt;
+        WhileNode while_stmt;
         BinaryExprNode binary_expr;
+        PostfixExprNode postfix_expr;
     } data;
 };
 

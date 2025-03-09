@@ -22,7 +22,7 @@ Token next_token(Lexer *lexer) {
     const char current = lexer->source[lexer->current_pos];
 
     if (current == '\0') {
-        return (Token){TOKEN_EOF, NULL, 0, NULL};
+        return (Token) {TOKEN_EOF, NULL, 0, NULL};
     }
 
     if (isalpha(current)) {
@@ -44,14 +44,14 @@ Token next_token(Lexer *lexer) {
         else if (strcmp(lexeme, "while") == 0) type = TOKEN_KEYWORD_WHILE;
         else if (strcmp(lexeme, "print") == 0) type = TOKEN_KEYWORD_PRINT;
 
-        return (Token){type, lexeme, 0, NULL};
+        return (Token) {type, lexeme, 0, NULL};
     }
 
     if (isdigit(current) || current == '.') {
         char *end;
         const double num = strtod(&lexer->source[lexer->current_pos], &end);
         lexer->current_pos = end - lexer->source;
-        return (Token){TOKEN_NUMBER, NULL, num, NULL};
+        return (Token) {TOKEN_NUMBER, NULL, num, NULL};
     }
 
     if (current == '"') {
@@ -81,18 +81,40 @@ Token next_token(Lexer *lexer) {
             lexer->current_pos++;
             return (Token) {TOKEN_OPERATOR_EQUAL, NULL, 0, NULL};
         case '<':
+            if (lexer->source[lexer->current_pos + 1] == '=') {
+                lexer->current_pos += 2;
+                return (Token) {TOKEN_OPERATOR_LESS_EQUAL, NULL, 0, NULL};
+            }
             lexer->current_pos++;
             return (Token) {TOKEN_OPERATOR_LESS, NULL, 0, NULL};
         case '>':
+            if (lexer->source[lexer->current_pos + 1] == '=') {
+                lexer->current_pos += 2;
+                return (Token) {TOKEN_OPERATOR_GREATER_EQUAL, NULL, 0, NULL};
+            }
             lexer->current_pos++;
             return (Token) {TOKEN_OPERATOR_GREATER, NULL, 0, NULL};
-        case '+':
+        case '!':
+            if (lexer->source[lexer->current_pos + 1] == '=') {
+                lexer->current_pos += 2;
+                return (Token) {TOKEN_OPERATOR_NOT_EQUAL, NULL, 0, NULL};
+            }
             lexer->current_pos++;
-            if (lexer->source[lexer->current_pos] == '+') {
-                lexer->current_pos++;
+            return (Token) {TOKEN_OPERATOR_NOT, NULL, 0, NULL};
+        case '+':
+            if (lexer->source[lexer->current_pos + 1] == '+') {
+                lexer->current_pos += 2;
                 return (Token) {TOKEN_OPERATOR_PLUS_PLUS, NULL, 0, NULL};
             }
-            return (Token) {TOKEN_OPERATOR_PLUS, NULL, 0, NULL};
+            lexer->current_pos++;
+            return (Token){TOKEN_OPERATOR_PLUS, NULL, 0, NULL};
+        case '-':
+            if (lexer->source[lexer->current_pos + 1] == '-') {
+                lexer->current_pos += 2;
+                return (Token){TOKEN_OPERATOR_MINUS_MINUS, NULL, 0, NULL};
+            }
+            lexer->current_pos++;
+            return (Token){TOKEN_OPERATOR_MINUS, NULL, 0, NULL};
         case '(':
             lexer->current_pos++;
             return (Token) {TOKEN_LPAREN, NULL, 0, NULL};

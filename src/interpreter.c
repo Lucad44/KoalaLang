@@ -93,8 +93,14 @@ void execute(const ASTNode *node) {
         case NODE_BLOCK:
             execute_block(&node->data.block);
             break;
+        case NODE_EXPR_POSTFIX:
+            execute_postfix(&node->data.postfix_expr);
+            break;
         case NODE_IF:
             execute_if(&node->data.if_stmt);
+            break;
+        case NODE_WHILE:
+            execute_while(&node->data.while_stmt);
             break;
         default:
             fprintf(stderr, "Unknown node type: %d\n", node->type);
@@ -144,6 +150,10 @@ int evaluate_condition(ASTNode *condition) {
                 case OP_LESS: return left < right;
                 case OP_GREATER: return left > right;
                 case OP_EQUAL: return left == right;
+                case OP_NOT_EQUAL: return left != right;
+                case OP_LESS_EQUAL: return left <= right;
+                case OP_GREATER_EQUAL: return left >= right;
+                default: ;
             }
             break;
         }
@@ -152,8 +162,39 @@ int evaluate_condition(ASTNode *condition) {
     return 0;
 }
 
+void execute_postfix(const PostfixExprNode *node) {
+    Variable *variable = (Variable *) hashmap_get(variable_map, &(Variable) {
+        .name = node->var_name
+    });
+
+    if (!variable) {
+        fprintf(stderr, "Undefined variable: %s\n", node->var_name);
+        return;
+    }
+
+    if (variable->type != VAR_NUM) {
+        fprintf(stderr, "Cannot increment/decrement non-numeric variable\n");
+        return;
+    }
+
+    switch (node->op) {
+        case OP_INC:
+            variable->value.num_val += 1;
+        break;
+        case OP_DEC:
+            variable->value.num_val -= 1;
+        break;
+    }
+}
+
 void execute_if(const IfNode *if_node) {
     if (evaluate_condition(if_node->condition)) {
         execute(if_node->body);
+    }
+}
+
+void execute_while(const WhileNode *while_node) {
+    while (evaluate_condition(while_node->condition)) {
+        execute(while_node->body);
     }
 }

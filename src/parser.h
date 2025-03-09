@@ -23,6 +23,10 @@ ASTNode *parse_braced_block(Parser *parser);
 
 ASTNode *parse_if(Parser *parser);
 
+ASTNode *parse_while(Parser *parser);
+
 ASTNode *parse_program(Parser *parser);
+
+ASTNode *parse_expression_statement(Parser *parser);
 
 #endif
