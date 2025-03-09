@@ -1,13 +1,12 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
 #include "memory.h"
 #include "ast.h"
 #include "variables.h"
 #include "hashmap.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-void* safe_malloc(size_t size) {
+void* safe_malloc(const size_t size) {
     void *ptr = malloc(size);
     if (!ptr) {
         fprintf(stderr, "Memory allocation failed\n");
@@ -16,7 +15,7 @@ void* safe_malloc(size_t size) {
     return ptr;
 }
 
-void* safe_calloc(size_t num, size_t size) {
+void* safe_calloc(const size_t num, const size_t size) {
     void *ptr = calloc(num, size);
     if (!ptr) {
         fprintf(stderr, "Memory allocation failed\n");
@@ -25,7 +24,7 @@ void* safe_calloc(size_t num, size_t size) {
     return ptr;
 }
 
-void* safe_realloc(void *ptr, size_t new_size) {
+void* safe_realloc(void *ptr, const size_t new_size) {
     void *new_ptr = realloc(ptr, new_size);
     if (!new_ptr && new_size > 0) {
         fprintf(stderr, "Memory reallocation failed\n");
@@ -35,7 +34,7 @@ void* safe_realloc(void *ptr, size_t new_size) {
 }
 
 void free_ast(void *node) {
-    ASTNode *ast_node = (ASTNode*)node;
+    ASTNode *ast_node = node;
     if (!ast_node) return;
 
     switch (ast_node->type) {

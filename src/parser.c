@@ -10,61 +10,58 @@ void init_parser(Parser *parser, Lexer *lexer) {
     advance(parser);
 }
 
- void advance(Parser *parser) {
+void advance(Parser *parser) {
     if (parser->current_token.type != TOKEN_EOF) {
         parser->current_token = next_token(parser->lexer);
     }
 }
 
- ASTNode *parse_primary(Parser *parser) {
+ASTNode *parse_primary(Parser *parser) {
     ASTNode *node = safe_malloc(sizeof(ASTNode));
 
     switch (parser->current_token.type) {
         case TOKEN_NUMBER:
             node->type = NODE_EXPR_LITERAL;
-        node->data.num_literal.num_val = parser->current_token.num_value;
-        advance(parser);
-        break;
+            node->data.num_literal.num_val = parser->current_token.num_value;
+            advance(parser);
+            break;
         case TOKEN_STRING:
             node->type = NODE_EXPR_LITERAL;
-        node->data.str_literal.str_val = strdup(parser->current_token.str_value);
-        advance(parser);
-        break;
+            node->data.str_literal.str_val = strdup(parser->current_token.str_value);
+            advance(parser);
+            break;
         case TOKEN_IDENTIFIER:
             node->type = NODE_EXPR_VARIABLE;
-        node->data.variable.name = strdup(parser->current_token.lexeme);
-        advance(parser);
-        break;
+            node->data.variable.name = strdup(parser->current_token.lexeme);
+            advance(parser);
+            break;
         default:
             fprintf(stderr, "Unexpected token in expression: %d\n", parser->current_token.type);
-        exit(EXIT_FAILURE);
+            exit(EXIT_FAILURE);
     }
-
     return node;
 }
 
- ASTNode *parse_binary_expr(Parser *parser, ASTNode *left, int min_prec) {
-     const struct {
+ASTNode *parse_binary_expr(Parser *parser, ASTNode *left, const int min_prec) {
+    const struct {
         TokenType token;
         BinaryOperator op;
         int prec;
-    } ops[] = {
+        } ops[] = {
         {TOKEN_OPERATOR_LESS, OP_LESS, 1},
         {TOKEN_OPERATOR_GREATER, OP_GREATER, 1},
         {TOKEN_OPERATOR_EQUAL, OP_EQUAL, 2},
     };
 
     while (1) {
-        TokenType lookahead = parser->current_token.type;
+        const TokenType lookahead = parser->current_token.type;
         int found = 0;
-        BinaryOperator op;
-        int prec;
+        BinaryOperator op = {};
 
         for (size_t i = 0; i < sizeof(ops)/sizeof(ops[0]); i++) {
             if (ops[i].token == lookahead && ops[i].prec >= min_prec) {
                 found = 1;
                 op = ops[i].op;
-                prec = ops[i].prec;
                 break;
             }
         }
@@ -79,7 +76,6 @@ void init_parser(Parser *parser, Lexer *lexer) {
         new_node->data.binary_expr.op = op;
         new_node->data.binary_expr.left = left;
         new_node->data.binary_expr.right = right;
-
         left = new_node;
     }
 
@@ -112,8 +108,8 @@ ASTNode *parse_expression(Parser *parser) {
     return node;
 }
 
- ASTNode *parse_print(Parser *parser) {
-    advance(parser); // Consume 'print'
+ASTNode *parse_print(Parser *parser) {
+    advance(parser);
 
     ASTNode **expressions = NULL;
     int expr_count = 0;
@@ -122,7 +118,7 @@ ASTNode *parse_expression(Parser *parser) {
         fprintf(stderr, "Expected '(' after print\n");
         exit(EXIT_FAILURE);
     }
-    advance(parser); // Consume '('
+    advance(parser);
 
     while (parser->current_token.type != TOKEN_RPAREN) {
         ASTNode *expr = parse_expression(parser);
@@ -130,17 +126,17 @@ ASTNode *parse_expression(Parser *parser) {
         expressions[expr_count++] = expr;
 
         if (parser->current_token.type == TOKEN_OPERATOR_PLUS) {
-            advance(parser); // Consume '+'
+            advance(parser);
         }
     }
 
-    advance(parser); // Consume ')'
+    advance(parser);
 
     if (parser->current_token.type != TOKEN_SEMICOLON) {
         fprintf(stderr, "Expected ';' after print statement\n");
         exit(EXIT_FAILURE);
     }
-    advance(parser); // Consume ';'
+    advance(parser);
 
     ASTNode *node = safe_malloc(sizeof(ASTNode));
     node->type = NODE_PRINT;
@@ -149,76 +145,74 @@ ASTNode *parse_expression(Parser *parser) {
     return node;
 }
 
- ASTNode *parse_declaration(Parser *parser) {
-    TokenType decl_type = parser->current_token.type;
-    advance(parser); // Consume type keyword
+ASTNode *parse_declaration(Parser *parser) {
+    const TokenType decl_type = parser->current_token.type;
+    advance(parser);
 
     if (parser->current_token.type != TOKEN_IDENTIFIER) {
         fprintf(stderr, "Expected identifier after type\n");
         exit(EXIT_FAILURE);
     }
     char *name = strdup(parser->current_token.lexeme);
-    advance(parser); // Consume identifier
+    advance(parser);
 
     if (parser->current_token.type != TOKEN_OPERATOR_EQUAL) {
         fprintf(stderr, "Expected '=' in declaration\n");
         exit(EXIT_FAILURE);
     }
-    advance(parser); // Consume '='
+    advance(parser);
 
     ASTNode *init_expr = parse_expression(parser);
 
     if (parser->current_token.type != TOKEN_SEMICOLON) {
-        fprintf(stderr, "Expected ';' after declaration\n");
-        exit(EXIT_FAILURE);
+    fprintf(stderr, "Expected ';' after declaration\n");
+    exit(EXIT_FAILURE);
     }
-    advance(parser); // Consume ';'
+    advance(parser);
 
     ASTNode *node = safe_malloc(sizeof(ASTNode));
     node->type = NODE_VAR_DECL;
     node->data.var_decl.name = name;
     node->data.var_decl.init_expr = init_expr;
-    node->data.var_decl.type = (decl_type == TOKEN_KEYWORD_NUM) ? VAR_NUM :
-                               (decl_type == TOKEN_KEYWORD_STR) ? VAR_STR : -1;
+    node->data.var_decl.type = decl_type == TOKEN_KEYWORD_NUM ? VAR_NUM :
+                           decl_type == TOKEN_KEYWORD_STR ? VAR_STR : -1;
     return node;
 }
 
 static ASTNode *parse_condition(Parser *parser) {
     ASTNode *left = parse_primary(parser);
 
-    // Ensure the next token is a comparison operator
-    TokenType op_type = parser->current_token.type;
+    const TokenType op_type = parser->current_token.type;
     if (op_type == TOKEN_OPERATOR_LESS ||
         op_type == TOKEN_OPERATOR_GREATER ||
         op_type == TOKEN_OPERATOR_EQUAL) {
 
-        advance(parser); // Consume the operator
-        ASTNode *right = parse_primary(parser); // Get the right-hand expression
+        advance(parser);
+        ASTNode *right = parse_primary(parser);
 
-        // Create a binary expression node
         ASTNode *comparison = safe_malloc(sizeof(ASTNode));
         comparison->type = NODE_EXPR_BINARY;
         comparison->data.binary_expr.op =
-            (op_type == TOKEN_OPERATOR_LESS) ? OP_LESS :
-            (op_type == TOKEN_OPERATOR_GREATER) ? OP_GREATER : OP_EQUAL;
+            op_type == TOKEN_OPERATOR_LESS ? OP_LESS :
+            op_type == TOKEN_OPERATOR_GREATER ? OP_GREATER : OP_EQUAL;
         comparison->data.binary_expr.left = left;
         comparison->data.binary_expr.right = right;
 
         return comparison;
         }
 
-    return left; // If no operator, return the single expression
+    return left;
 }
 
 
 ASTNode *parse_if(Parser *parser) {
-    advance(parser); // Consume 'if'
+    advance(parser);
 
     if (parser->current_token.type != TOKEN_LPAREN) {
         fprintf(stderr, "Expected '(' after if\n");
         exit(EXIT_FAILURE);
     }
-    advance(parser); // Consume '('
+    advance(parser);
 
     ASTNode *condition = parse_condition(parser);
 
@@ -228,7 +222,7 @@ ASTNode *parse_if(Parser *parser) {
                parser->current_token.lexeme ? parser->current_token.lexeme : "NULL");
         exit(EXIT_FAILURE);
     }
-    advance(parser); // Consume ')'
+    advance(parser);
 
     ASTNode *body = parse_braced_block(parser);
 
@@ -239,7 +233,7 @@ ASTNode *parse_if(Parser *parser) {
     return node;
 }
 
- ASTNode *parse_braced_block(Parser *parser) {
+ASTNode *parse_braced_block(Parser *parser) {
     if (parser->current_token.type != TOKEN_LBRACE) {
         fprintf(stderr, "Expected '{' at position %d\n", parser->lexer->current_pos);
         exit(EXIT_FAILURE);
@@ -256,16 +250,16 @@ ASTNode *parse_if(Parser *parser) {
             case TOKEN_KEYWORD_STR:
             case TOKEN_KEYWORD_VAR:
                 stmt = parse_declaration(parser);
-            break;
+                break;
             case TOKEN_KEYWORD_PRINT:
                 stmt = parse_print(parser);
-            break;
+                break;
             case TOKEN_KEYWORD_IF:
                 stmt = parse_if(parser);
-            break;
+                break;
             default:
                 fprintf(stderr, "Unexpected token in block: %d\n", parser->current_token.type);
-            exit(EXIT_FAILURE);
+                exit(EXIT_FAILURE);
         }
         statements = safe_realloc(statements, (count + 1) * sizeof(ASTNode *));
         statements[count++] = stmt;
@@ -275,7 +269,7 @@ ASTNode *parse_if(Parser *parser) {
         fprintf(stderr, "Expected '}', got %d\n", parser->current_token.type);
         exit(EXIT_FAILURE);
     }
-    advance(parser); // Consume '}'
+    advance(parser);
 
     ASTNode *block = safe_malloc(sizeof(ASTNode));
     block->type = NODE_BLOCK;

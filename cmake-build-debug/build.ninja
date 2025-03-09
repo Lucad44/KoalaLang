@@ -85,11 +85,11 @@ build CMakeFiles/KoalaLang.dir/src/memory.c.obj: C_COMPILER__KoalaLang_unscanned
   OBJECT_DIR = CMakeFiles\KoalaLang.dir
   OBJECT_FILE_DIR = CMakeFiles\KoalaLang.dir\src
 
-build CMakeFiles/KoalaLang.dir/src/tinyexpr/tinyexpr.c.obj: C_COMPILER__KoalaLang_unscanned_Debug C$:/Users/lucad/CLionProjects/KoalaLang/src/tinyexpr/tinyexpr.c || cmake_object_order_depends_target_KoalaLang
-  DEP_FILE = CMakeFiles\KoalaLang.dir\src\tinyexpr\tinyexpr.c.obj.d
+build CMakeFiles/KoalaLang.dir/src/hashmap.c.obj: C_COMPILER__KoalaLang_unscanned_Debug C$:/Users/lucad/CLionProjects/KoalaLang/src/hashmap.c || cmake_object_order_depends_target_KoalaLang
+  DEP_FILE = CMakeFiles\KoalaLang.dir\src\hashmap.c.obj.d
   FLAGS = -g -std=gnu2x -fdiagnostics-color=always
   OBJECT_DIR = CMakeFiles\KoalaLang.dir
-  OBJECT_FILE_DIR = CMakeFiles\KoalaLang.dir\src\tinyexpr
+  OBJECT_FILE_DIR = CMakeFiles\KoalaLang.dir\src
 
 
 # =============================================================================
@@ -99,7 +99,7 @@ build CMakeFiles/KoalaLang.dir/src/tinyexpr/tinyexpr.c.obj: C_COMPILER__KoalaLan
 #############################################
 # Link the executable KoalaLang.exe
 
-build KoalaLang.exe: C_EXECUTABLE_LINKER__KoalaLang_Debug CMakeFiles/KoalaLang.dir/src/main.c.obj CMakeFiles/KoalaLang.dir/src/variables.c.obj CMakeFiles/KoalaLang.dir/src/lexer.c.obj CMakeFiles/KoalaLang.dir/src/parser.c.obj CMakeFiles/KoalaLang.dir/src/interpreter.c.obj CMakeFiles/KoalaLang.dir/src/memory.c.obj CMakeFiles/KoalaLang.dir/src/tinyexpr/tinyexpr.c.obj
+build KoalaLang.exe: C_EXECUTABLE_LINKER__KoalaLang_Debug CMakeFiles/KoalaLang.dir/src/main.c.obj CMakeFiles/KoalaLang.dir/src/variables.c.obj CMakeFiles/KoalaLang.dir/src/lexer.c.obj CMakeFiles/KoalaLang.dir/src/parser.c.obj CMakeFiles/KoalaLang.dir/src/interpreter.c.obj CMakeFiles/KoalaLang.dir/src/memory.c.obj CMakeFiles/KoalaLang.dir/src/hashmap.c.obj
   FLAGS = -g
   LINK_LIBRARIES = -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
   OBJECT_DIR = CMakeFiles\KoalaLang.dir

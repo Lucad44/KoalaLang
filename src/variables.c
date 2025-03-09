@@ -1,14 +1,13 @@
-#include "variables.h"
-#include "memory.h"
-#include "hashmap.h"
-
 #include <stdio.h>
 #include <string.h>
+#include "variables.h"
+#include "hashmap.h"
 
 struct hashmap *variable_map = NULL;
 
 static void __attribute__((constructor)) init_vars() {
-    variable_map = hashmap_new(sizeof(Variable), 0, 0, 0, variable_hash, variable_compare, NULL, NULL);
+    variable_map = hashmap_new(sizeof(Variable), 0, 0, 0,
+        variable_hash, variable_compare, NULL, NULL);
 }
 
 int variable_compare(const void *a, const void *b, void *udata) {

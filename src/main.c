@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
     }
 
     fseek(file, 0, SEEK_END);
-    long length = ftell(file);
+    const long length = ftell(file);
     fseek(file, 0, SEEK_SET);
     char *source = safe_malloc(length + 1);
     fread(source, 1, length, file);
