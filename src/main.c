@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
 
     execute(program);
 
-    printf("\n-- iterate over all users (hashmap_scan) --\n");
+    printf("\n-- iterate over all variables (hashmap_scan) --\n");
     hashmap_scan(variable_map, variable_iter, NULL);
 
     // Cleanup

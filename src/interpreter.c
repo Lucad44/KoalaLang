@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include "interpreter.h"
+
+#include <math.h>
+
 #include "hashmap.h"
 #include "variables.h"
 #include "memory.h"
@@ -9,6 +13,65 @@
 static void execute_block(const BlockNode *block) {
     for (int i = 0; i < block->stmt_count; i++) {
         execute(block->statements[i]);
+    }
+}
+
+static double evaluate_expression(const ASTNode *node) {
+    switch (node->type) {
+        case NODE_EXPR_LITERAL:
+            return node->data.num_literal.num_val;
+        case NODE_EXPR_VARIABLE: {
+            const Variable *variable = hashmap_get(variable_map, &(Variable) {
+                .name = node->data.variable.name
+            });
+            if (variable && variable->type == VAR_NUM) {
+                return variable->value.num_val;
+            }
+            return 0;
+        }
+        case NODE_EXPR_BINARY: {
+            const double left = evaluate_expression(node->data.binary_expr.left);
+            const double right = evaluate_expression(node->data.binary_expr.right);
+
+            switch (node->data.binary_expr.op) {
+                case OP_PLUS: return left + right;
+                case OP_MINUS: return left - right;
+                case OP_MULTIPLY: return left * right;
+                case OP_DIVIDE: 
+                    if (right == 0) {
+                        fprintf(stderr, "Error: Division by zero\n");
+                        exit(EXIT_FAILURE);
+                    }
+                    return left / right;
+                case OP_MODULO:
+                    if (right == 0) {
+                        fprintf(stderr, "Error: Modulo by zero\n");
+                        exit(EXIT_FAILURE);
+                    }
+                    return (double)((long long)left % (long long)right);
+                case OP_POWER:
+                    if (left == 0 && right == 0) {
+                        fprintf(stderr, "Error: 0 to the power of 0 is undefined\n");
+                        exit(EXIT_FAILURE);
+                    }
+                    return pow(left, right);
+                case OP_AND:
+                    return (long long) left & (long long) right;
+                case OP_OR:
+                    return (long long) left | (long long) right;
+                case OP_XOR:
+                    return (long long) left ^ (long long) right;
+                case OP_LESS: return left < right;
+                case OP_GREATER: return left > right;
+                case OP_EQUAL: return left == right;
+                case OP_NOT_EQUAL: return left != right;
+                case OP_LESS_EQUAL: return left <= right;
+                case OP_GREATER_EQUAL: return left >= right;
+                default: return 0;
+            }
+        }
+        default:
+            return 0;
     }
 }
 
@@ -27,6 +90,15 @@ static void execute_var_decl(const VarDeclNode *node) {
                 .name = node->name,
                 .type = VAR_STR,
                 .value = { .str_val = str_val }
+            });
+        }
+    } else if (node->init_expr->type == NODE_EXPR_BINARY || node->init_expr->type == NODE_EXPR_VARIABLE) {
+        if (node->type == VAR_NUM || node->type == -1) {
+            const double num_val = evaluate_expression(node->init_expr);
+            hashmap_set(variable_map, &(Variable) {
+                .name = node->name,
+                .type = VAR_NUM,
+                .value = { .num_val = num_val }
             });
         }
     }

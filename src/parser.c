@@ -48,23 +48,35 @@ ASTNode *parse_binary_expr(Parser *parser, ASTNode *left, const int min_prec) {
         BinaryOperator op;
         int prec;
         } ops[] = {
-        {TOKEN_OPERATOR_LESS, OP_LESS, 1},
-        {TOKEN_OPERATOR_GREATER, OP_GREATER, 1},
-        {TOKEN_OPERATOR_EQUAL, OP_EQUAL, 2},
-        {TOKEN_OPERATOR_NOT_EQUAL, OP_NOT_EQUAL, 3},
-        {TOKEN_OPERATOR_LESS_EQUAL, OP_LESS_EQUAL, 4},
-        {TOKEN_OPERATOR_GREATER_EQUAL, OP_GREATER_EQUAL, 5},
+        {TOKEN_OPERATOR_AND, OP_AND, 1},
+        {TOKEN_OPERATOR_OR, OP_OR, 1},
+        {TOKEN_OPERATOR_XOR, OP_XOR, 1},
+        {TOKEN_OPERATOR_PLUS, OP_PLUS, 1},
+        {TOKEN_OPERATOR_MINUS, OP_MINUS, 1},
+        {TOKEN_OPERATOR_MULTIPLY, OP_MULTIPLY, 2},
+        {TOKEN_OPERATOR_DIVIDE, OP_DIVIDE, 2},
+        {TOKEN_OPERATOR_MODULO, OP_MODULO, 2},
+        {TOKEN_OPERATOR_POWER, OP_POWER, 2},
+        {TOKEN_OPERATOR_LESS, OP_LESS, 3},
+
+        {TOKEN_OPERATOR_GREATER, OP_GREATER, 3},
+        {TOKEN_OPERATOR_EQUAL, OP_EQUAL, 4},
+        {TOKEN_OPERATOR_NOT_EQUAL, OP_NOT_EQUAL, 4},
+        {TOKEN_OPERATOR_LESS_EQUAL, OP_LESS_EQUAL, 3},
+        {TOKEN_OPERATOR_GREATER_EQUAL, OP_GREATER_EQUAL, 3},
     };
 
     while (1) {
         const TokenType lookahead = parser->current_token.type;
         int found = 0;
         BinaryOperator op = {};
+        int op_prec = 0;
 
         for (size_t i = 0; i < sizeof(ops)/sizeof(ops[0]); i++) {
             if (ops[i].token == lookahead && ops[i].prec >= min_prec) {
                 found = 1;
                 op = ops[i].op;
+                op_prec = ops[i].prec;
                 break;
             }
         }
@@ -73,6 +85,8 @@ ASTNode *parse_binary_expr(Parser *parser, ASTNode *left, const int min_prec) {
 
         advance(parser);
         ASTNode *right = parse_primary(parser);
+        right = parse_postfix(parser, right);
+        right = parse_binary_expr(parser, right, op_prec + 1);
 
         ASTNode *new_node = safe_malloc(sizeof(ASTNode));
         new_node->type = NODE_EXPR_BINARY;
@@ -85,7 +99,7 @@ ASTNode *parse_binary_expr(Parser *parser, ASTNode *left, const int min_prec) {
     return left;
 }
 
-static ASTNode *parse_postfix(Parser *parser, ASTNode *left) {
+ASTNode *parse_postfix(Parser *parser, ASTNode *left) {
     while (1) {
         if (parser->current_token.type == TOKEN_OPERATOR_PLUS_PLUS ||
             parser->current_token.type == TOKEN_OPERATOR_MINUS_MINUS)
@@ -114,7 +128,8 @@ static ASTNode *parse_postfix(Parser *parser, ASTNode *left) {
 
 ASTNode *parse_expression(Parser *parser) {
     ASTNode *left = parse_primary(parser);
-    return parse_postfix(parser, left);
+    left = parse_postfix(parser, left);
+    return parse_binary_expr(parser, left, 0);
 }
 
 ASTNode *parse_print(Parser *parser) {
@@ -134,7 +149,7 @@ ASTNode *parse_print(Parser *parser) {
         expressions = safe_realloc(expressions, (expr_count + 1) * sizeof(ASTNode *));
         expressions[expr_count++] = expr;
 
-        if (parser->current_token.type == TOKEN_OPERATOR_PLUS) {
+        if (parser->current_token.type == TOKEN_OPERATOR_CONCAT) {
             advance(parser);
         }
     }

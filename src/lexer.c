@@ -73,6 +73,9 @@ Token next_token(Lexer *lexer) {
     }
 
     switch (current) {
+        case '$':
+            lexer->current_pos++;
+            return (Token) {TOKEN_OPERATOR_CONCAT, NULL, 0, NULL};
         case '=':
             if (lexer->source[lexer->current_pos + 1] == '=') {
                 lexer->current_pos += 2;
@@ -107,14 +110,36 @@ Token next_token(Lexer *lexer) {
                 return (Token) {TOKEN_OPERATOR_PLUS_PLUS, NULL, 0, NULL};
             }
             lexer->current_pos++;
-            return (Token){TOKEN_OPERATOR_PLUS, NULL, 0, NULL};
+            return (Token) {TOKEN_OPERATOR_PLUS, NULL, 0, NULL};
         case '-':
             if (lexer->source[lexer->current_pos + 1] == '-') {
                 lexer->current_pos += 2;
-                return (Token){TOKEN_OPERATOR_MINUS_MINUS, NULL, 0, NULL};
+                return (Token) {TOKEN_OPERATOR_MINUS_MINUS, NULL, 0, NULL};
             }
             lexer->current_pos++;
-            return (Token){TOKEN_OPERATOR_MINUS, NULL, 0, NULL};
+            return (Token) {TOKEN_OPERATOR_MINUS, NULL, 0, NULL};
+        case '*':
+            if (lexer->source[lexer->current_pos + 1] == '*') {
+                lexer->current_pos += 2;
+                return (Token) {TOKEN_OPERATOR_POWER, NULL, 0, NULL};
+            }
+            lexer->current_pos++;
+            return (Token) {TOKEN_OPERATOR_MULTIPLY, NULL, 0, NULL};
+        case '/':
+            lexer->current_pos++;
+            return (Token) {TOKEN_OPERATOR_DIVIDE, NULL, 0, NULL};
+        case '%':
+            lexer->current_pos++;
+            return (Token) {TOKEN_OPERATOR_MODULO, NULL, 0, NULL};
+        case '&':
+            lexer->current_pos++;
+            return (Token) {TOKEN_OPERATOR_AND, NULL, 0, NULL};
+        case '|':
+            lexer->current_pos++;
+            return (Token) {TOKEN_OPERATOR_OR, NULL, 0, NULL};
+        case '^':
+            lexer->current_pos++;
+            return (Token) {TOKEN_OPERATOR_XOR, NULL, 0, NULL};
         case '(':
             lexer->current_pos++;
             return (Token) {TOKEN_LPAREN, NULL, 0, NULL};

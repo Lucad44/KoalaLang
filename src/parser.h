@@ -29,4 +29,6 @@ ASTNode *parse_program(Parser *parser);
 
 ASTNode *parse_expression_statement(Parser *parser);
 
+ASTNode *parse_postfix(Parser *parser, ASTNode *left);
+
 #endif

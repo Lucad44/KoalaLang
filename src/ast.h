@@ -14,6 +14,15 @@ typedef enum {
 } NodeType;
 
 typedef enum {
+    OP_PLUS,
+    OP_MINUS,
+    OP_MULTIPLY,
+    OP_DIVIDE,
+    OP_MODULO,
+    OP_POWER,
+    OP_AND,
+    OP_OR,
+    OP_XOR,
     OP_LESS,
     OP_GREATER,
     OP_EQUAL,
