@@ -72,7 +72,7 @@ ASTNode *parse_binary_expr(Parser *parser, ASTNode *left, const int min_prec) {
         BinaryOperator op = {};
         int op_prec = 0;
 
-        for (size_t i = 0; i < sizeof(ops)/sizeof(ops[0]); i++) {
+        for (size_t i = 0; i < sizeof(ops) / sizeof(ops[0]); i++) {
             if (ops[i].token == lookahead && ops[i].prec >= min_prec) {
                 found = 1;
                 op = ops[i].op;
@@ -240,7 +240,7 @@ ASTNode *parse_if(Parser *parser) {
     advance(parser);
 
     if (parser->current_token.type != TOKEN_LPAREN) {
-        fprintf(stderr, "Expected '(' after if\n");
+        fprintf(stderr, "Expected '(' after conditional statement\n");
         exit(EXIT_FAILURE);
     }
     advance(parser);
@@ -261,6 +261,59 @@ ASTNode *parse_if(Parser *parser) {
     node->type = NODE_IF;
     node->data.if_stmt.condition = condition;
     node->data.if_stmt.body = body;
+    node->data.if_stmt.elif_nodes = NULL;
+    node->data.if_stmt.elif_count = 0;
+    node->data.if_stmt.else_body = NULL;
+
+    // Check for elif and else branches
+    while (parser->current_token.type == TOKEN_KEYWORD_ELIF) {
+        advance(parser);
+        
+        if (parser->current_token.type != TOKEN_LPAREN) {
+            fprintf(stderr, "Expected '(' after elif\n");
+            exit(EXIT_FAILURE);
+        }
+        advance(parser);
+        
+        ASTNode *elif_condition = parse_condition(parser);
+        
+        if (parser->current_token.type != TOKEN_RPAREN) {
+            fprintf(stderr, "Expected ')' after elif condition\n");
+            exit(EXIT_FAILURE);
+        }
+        advance(parser);
+        
+        ASTNode *elif_body = parse_braced_block(parser);
+        
+        node->data.if_stmt.elif_count++;
+        node->data.if_stmt.elif_nodes = safe_realloc(node->data.if_stmt.elif_nodes,
+            node->data.if_stmt.elif_count * sizeof(ASTNode*));
+        
+        ASTNode *elif_node = safe_malloc(sizeof(ASTNode));
+        elif_node->type = NODE_ELIF;
+        elif_node->data.if_stmt.condition = elif_condition;
+        elif_node->data.if_stmt.body = elif_body;
+        
+        node->data.if_stmt.elif_nodes[node->data.if_stmt.elif_count - 1] = elif_node;
+    }
+
+    // Check for else branch
+    if (parser->current_token.type == TOKEN_KEYWORD_ELSE) {
+        advance(parser);
+        node->data.if_stmt.else_body = parse_braced_block(parser);
+    }
+
+    return node;
+}
+
+ASTNode *parse_else(Parser *parser) {
+    advance(parser);
+
+    ASTNode *body = parse_braced_block(parser);
+
+    ASTNode *node = safe_malloc(sizeof(ASTNode));
+    node->type = NODE_ELSE;
+    node->data.if_stmt.else_body = body;
     return node;
 }
 
@@ -314,6 +367,8 @@ ASTNode *parse_braced_block(Parser *parser) {
                 stmt = parse_print(parser);
                 break;
             case TOKEN_KEYWORD_IF:
+            case TOKEN_KEYWORD_ELIF:
+            case TOKEN_KEYWORD_ELSE:
                 stmt = parse_if(parser);
                 break;
             case TOKEN_KEYWORD_WHILE:

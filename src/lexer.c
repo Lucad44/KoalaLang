@@ -41,6 +41,8 @@ Token next_token(Lexer *lexer) {
         else if (strcmp(lexeme, "str") == 0) type = TOKEN_KEYWORD_STR;
         else if (strcmp(lexeme, "var") == 0) type = TOKEN_KEYWORD_VAR;
         else if (strcmp(lexeme, "if") == 0) type = TOKEN_KEYWORD_IF;
+        else if (strcmp(lexeme, "elif") == 0) type = TOKEN_KEYWORD_ELIF;
+        else if (strcmp(lexeme, "else") == 0) type = TOKEN_KEYWORD_ELSE;
         else if (strcmp(lexeme, "while") == 0) type = TOKEN_KEYWORD_WHILE;
         else if (strcmp(lexeme, "print") == 0) type = TOKEN_KEYWORD_PRINT;
 

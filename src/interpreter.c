@@ -262,6 +262,19 @@ void execute_postfix(const PostfixExprNode *node) {
 void execute_if(const IfNode *if_node) {
     if (evaluate_condition(if_node->condition)) {
         execute(if_node->body);
+        return;
+    }
+
+    for (int i = 0; i < if_node->elif_count; i++) {
+        const ASTNode *elif_node = if_node->elif_nodes[i];
+        if (evaluate_condition(elif_node->data.if_stmt.condition)) {
+            execute(elif_node->data.if_stmt.body);
+            return;
+        }
+    }
+
+    if (if_node->else_body) {
+        execute(if_node->else_body);
     }
 }
 

@@ -5,6 +5,8 @@ typedef enum {
     NODE_VAR_DECL,
     NODE_PRINT,
     NODE_IF,
+    NODE_ELIF,
+    NODE_ELSE,
     NODE_WHILE,
     NODE_BLOCK,
     NODE_EXPR_LITERAL,
@@ -80,6 +82,9 @@ typedef struct {
 typedef struct {
     ASTNode *condition;
     ASTNode *body;
+    ASTNode **elif_nodes;  // Array of elif nodes
+    int elif_count;
+    ASTNode *else_body;    // Optional else body
 } IfNode;
 
 typedef struct {
