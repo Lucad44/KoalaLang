@@ -251,10 +251,10 @@ void execute_postfix(const PostfixExprNode *node) {
 
     switch (node->op) {
         case OP_INC:
-            variable->value.num_val += 1;
+            variable->value.num_val++;
         break;
         case OP_DEC:
-            variable->value.num_val -= 1;
+            variable->value.num_val--;
         break;
     }
 }

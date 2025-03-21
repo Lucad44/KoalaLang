@@ -265,7 +265,6 @@ ASTNode *parse_if(Parser *parser) {
     node->data.if_stmt.elif_count = 0;
     node->data.if_stmt.else_body = NULL;
 
-    // Check for elif and else branches
     while (parser->current_token.type == TOKEN_KEYWORD_ELIF) {
         advance(parser);
         
@@ -297,7 +296,6 @@ ASTNode *parse_if(Parser *parser) {
         node->data.if_stmt.elif_nodes[node->data.if_stmt.elif_count - 1] = elif_node;
     }
 
-    // Check for else branch
     if (parser->current_token.type == TOKEN_KEYWORD_ELSE) {
         advance(parser);
         node->data.if_stmt.else_body = parse_braced_block(parser);

@@ -82,9 +82,9 @@ typedef struct {
 typedef struct {
     ASTNode *condition;
     ASTNode *body;
-    ASTNode **elif_nodes;  // Array of elif nodes
+    ASTNode **elif_nodes;
     int elif_count;
-    ASTNode *else_body;    // Optional else body
+    ASTNode *else_body;
 } IfNode;
 
 typedef struct {
