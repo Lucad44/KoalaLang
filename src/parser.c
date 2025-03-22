@@ -20,6 +20,17 @@ ASTNode *parse_primary(Parser *parser) {
     ASTNode *node = safe_malloc(sizeof(ASTNode));
 
     switch (parser->current_token.type) {
+        case TOKEN_LPAREN: {
+            advance(parser); // consume '('
+            ASTNode *expr = parse_expression(parser);
+            
+            if (parser->current_token.type != TOKEN_RPAREN) {
+                fprintf(stderr, "Expected closing parenthesis ')'\n");
+                exit(EXIT_FAILURE);
+            }
+            advance(parser); // consume ')'
+            return expr;
+        }
         case TOKEN_NUMBER:
             node->type = NODE_EXPR_LITERAL;
             node->data.num_literal.num_val = parser->current_token.num_value;
@@ -47,23 +58,28 @@ ASTNode *parse_binary_expr(Parser *parser, ASTNode *left, const int min_prec) {
         TokenType token;
         BinaryOperator op;
         int prec;
-        } ops[] = {
-        {TOKEN_OPERATOR_AND, OP_AND, 1},
-        {TOKEN_OPERATOR_OR, OP_OR, 1},
-        {TOKEN_OPERATOR_XOR, OP_XOR, 1},
-        {TOKEN_OPERATOR_PLUS, OP_PLUS, 1},
-        {TOKEN_OPERATOR_MINUS, OP_MINUS, 1},
-        {TOKEN_OPERATOR_MULTIPLY, OP_MULTIPLY, 2},
-        {TOKEN_OPERATOR_DIVIDE, OP_DIVIDE, 2},
-        {TOKEN_OPERATOR_MODULO, OP_MODULO, 2},
-        {TOKEN_OPERATOR_POWER, OP_POWER, 2},
-        {TOKEN_OPERATOR_LESS, OP_LESS, 3},
-
-        {TOKEN_OPERATOR_GREATER, OP_GREATER, 3},
-        {TOKEN_OPERATOR_EQUAL, OP_EQUAL, 4},
-        {TOKEN_OPERATOR_NOT_EQUAL, OP_NOT_EQUAL, 4},
-        {TOKEN_OPERATOR_LESS_EQUAL, OP_LESS_EQUAL, 3},
-        {TOKEN_OPERATOR_GREATER_EQUAL, OP_GREATER_EQUAL, 3},
+    } ops[] = {
+        // Precedence levels from lowest to highest
+        {TOKEN_OPERATOR_OR, OP_OR, 1},           // |
+        {TOKEN_OPERATOR_XOR, OP_XOR, 2},         // ^
+        {TOKEN_OPERATOR_AND, OP_AND, 3},         // &
+        
+        {TOKEN_OPERATOR_EQUAL, OP_EQUAL, 7},     // == != 
+        {TOKEN_OPERATOR_NOT_EQUAL, OP_NOT_EQUAL, 7},
+        
+        {TOKEN_OPERATOR_LESS, OP_LESS, 8},       // < > <= >=
+        {TOKEN_OPERATOR_GREATER, OP_GREATER, 8},
+        {TOKEN_OPERATOR_LESS_EQUAL, OP_LESS_EQUAL, 8},
+        {TOKEN_OPERATOR_GREATER_EQUAL, OP_GREATER_EQUAL, 8},
+        
+        {TOKEN_OPERATOR_PLUS, OP_PLUS, 10},      // + -
+        {TOKEN_OPERATOR_MINUS, OP_MINUS, 10},
+        
+        {TOKEN_OPERATOR_MULTIPLY, OP_MULTIPLY, 11}, // * / %
+        {TOKEN_OPERATOR_DIVIDE, OP_DIVIDE, 11},
+        {TOKEN_OPERATOR_MODULO, OP_MODULO, 11},
+        
+        {TOKEN_OPERATOR_POWER, OP_POWER, 12}    // **
     };
 
     while (1) {
