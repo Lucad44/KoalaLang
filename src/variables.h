@@ -7,7 +7,8 @@
 
 typedef enum {
     VAR_NUM,
-    VAR_STR
+    VAR_STR,
+    VAR_NIL,
 } VarType;
 
 typedef struct {
@@ -16,6 +17,7 @@ typedef struct {
     union {
         double num_val;
         char *str_val;
+        void *nil_val;
     } value;
 } Variable;
 

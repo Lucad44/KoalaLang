@@ -4,6 +4,7 @@
 #include "parser.h"
 #include "interpreter.h"
 #include "variables.h"
+#include "functions.h"
 #include "memory.h"
 #include "hashmap.h"
 
@@ -57,6 +58,10 @@ int main(int argc, char **argv) {
 
     printf("\n-- iterate over all variables (hashmap_scan) --\n");
     hashmap_scan(variable_map, variable_iter, NULL);
+
+    printf("\n-- iterate over all functions (hashmap_scan) --\n");
+    hashmap_scan(function_map, function_iter, NULL);
+
 
     // Cleanup
     free_ast(program);

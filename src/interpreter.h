@@ -13,4 +13,8 @@ void execute_if(const IfNode *if_node);
 
 void execute_while(const WhileNode *while_node);
 
+void execute_func_decl(const FuncDeclNode *func_decl);
+
+void execute_func_call(const FuncCallNode *func_call);
+
 #endif //INTERPRETER_H

@@ -4,6 +4,8 @@
 typedef enum {
     NODE_VAR_DECL,
     NODE_PRINT,
+    NODE_FUNC_DECL,
+    NODE_FUNC_CALL,
     NODE_IF,
     NODE_ELIF,
     NODE_ELSE,
@@ -92,6 +94,25 @@ typedef struct {
     ASTNode *body;
 } WhileNode;
 
+typedef struct {
+    char *name;
+    char *type;
+} Parameter;
+
+typedef struct {
+    char *name;
+    char *type;
+    int param_count;
+    Parameter *parameters;
+    ASTNode *body;
+} FuncDeclNode;
+
+typedef struct {
+    char *name;
+    ASTNode **arguments;
+    int arg_count;
+} FuncCallNode;
+
 struct ASTNode {
     NodeType type;
     union {
@@ -105,6 +126,8 @@ struct ASTNode {
         WhileNode while_stmt;
         BinaryExprNode binary_expr;
         PostfixExprNode postfix_expr;
+        FuncDeclNode func_decl;
+        FuncCallNode func_call;
     } data;
 };
 

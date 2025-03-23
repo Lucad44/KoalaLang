@@ -5,7 +5,7 @@
 
 struct hashmap *variable_map = NULL;
 
-static void __attribute__((constructor)) init_vars() {
+static void __attribute__((constructor)) init_variable_map() {
     variable_map = hashmap_new(sizeof(Variable), 0, 0, 0,
         variable_hash, variable_compare, NULL, NULL);
 }

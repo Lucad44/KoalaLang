@@ -388,6 +388,9 @@ ASTNode *parse_braced_block(Parser *parser) {
             case TOKEN_KEYWORD_WHILE:
                 stmt = parse_while(parser);
                 break;
+            case TOKEN_KEYWORD_CALL:
+                stmt = parse_function_call(parser);
+                break;
             case TOKEN_IDENTIFIER:
                 stmt = parse_expression_statement(parser);
                 break;
@@ -426,6 +429,133 @@ ASTNode *parse_expression_statement(Parser *parser) {
     return expr;
 }
 
+ASTNode *parse_function_declaration(Parser *parser) {
+    advance(parser);
+
+    if (parser->current_token.type != TOKEN_KEYWORD_NUM && 
+        parser->current_token.type != TOKEN_KEYWORD_STR &&
+        parser->current_token.type != TOKEN_KEYWORD_NIL)
+    {
+        fprintf(stderr, "Expected return type (num, str, or nil)\n");
+        exit(EXIT_FAILURE);
+    }
+    char *return_type = strdup(parser->current_token.lexeme);
+    advance(parser);
+
+    if (parser->current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "Expected function name\n");
+        exit(EXIT_FAILURE);
+    }
+    char *func_name = strdup(parser->current_token.lexeme);
+    advance(parser);
+
+
+    if (parser->current_token.type != TOKEN_LPAREN) {
+        fprintf(stderr, "Expected '(' after function name\n");
+        exit(EXIT_FAILURE);
+    }
+    advance(parser);
+
+    Parameter *parameters = NULL;
+    int param_count = 0;
+
+    while (parser->current_token.type != TOKEN_RPAREN) {
+        if (parser->current_token.type != TOKEN_KEYWORD_NUM && 
+            parser->current_token.type != TOKEN_KEYWORD_STR)
+        {
+            fprintf(stderr, "Expected parameter type (num or str)\n");
+            exit(EXIT_FAILURE);
+        }
+        char *param_type = strdup(parser->current_token.lexeme);
+        advance(parser);
+
+        if (parser->current_token.type != TOKEN_IDENTIFIER) {
+            fprintf(stderr, "Expected parameter name\n");
+            exit(EXIT_FAILURE);
+        }
+        char *param_name = strdup(parser->current_token.lexeme);
+        advance(parser);
+
+        parameters = safe_realloc(parameters, (param_count + 1) * sizeof(*parameters));
+        parameters[param_count].name = param_name;
+        parameters[param_count].type = param_type;
+        param_count++;
+
+        if (parser->current_token.type == TOKEN_RPAREN) {
+            break;
+        }
+        if (parser->current_token.type != TOKEN_COMMA) {
+            fprintf(stderr, "Expected ',' or ')' after parameter\n");
+            exit(EXIT_FAILURE);
+        }
+        advance(parser);
+    }
+    advance(parser);
+
+    ASTNode *body = parse_braced_block(parser);
+
+    ASTNode *node = safe_malloc(sizeof(ASTNode));
+    node->type = NODE_FUNC_DECL;
+    node->data.func_decl.name = func_name;
+    node->data.func_decl.type = return_type;
+    node->data.func_decl.parameters = parameters;
+    node->data.func_decl.param_count = param_count;
+    node->data.func_decl.body = body;
+
+    return node;
+}
+
+ASTNode *parse_function_call(Parser *parser) {
+    advance(parser);
+
+    if (parser->current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "Expected function name after 'call'\n");
+        exit(EXIT_FAILURE);
+    }
+    char *func_name = strdup(parser->current_token.lexeme);
+    advance(parser);
+
+    if (parser->current_token.type != TOKEN_LPAREN) {
+        fprintf(stderr, "Expected '(' after function name\n");
+        exit(EXIT_FAILURE);
+    }
+    advance(parser);
+
+    ASTNode **arguments = NULL;
+    int arg_count = 0;
+
+    while (parser->current_token.type != TOKEN_RPAREN) {
+        ASTNode *arg = parse_expression(parser);
+
+        arguments = safe_realloc(arguments, (arg_count + 1) * sizeof(ASTNode *));
+        arguments[arg_count++] = arg;
+
+        if (parser->current_token.type == TOKEN_RPAREN) {
+            break;
+        }
+        if (parser->current_token.type != TOKEN_COMMA) {
+            fprintf(stderr, "Expected ',' or ')' after argument\n");
+            exit(EXIT_FAILURE);
+        }
+        advance(parser);
+    }
+    advance(parser);
+
+    if (parser->current_token.type != TOKEN_SEMICOLON) {
+        fprintf(stderr, "Expected ';' after function call\n");
+        exit(EXIT_FAILURE);
+    }
+    advance(parser);
+
+    ASTNode *node = safe_malloc(sizeof(ASTNode));
+    node->type = NODE_FUNC_CALL;
+    node->data.func_call.name = func_name;
+    node->data.func_call.arguments = arguments;
+    node->data.func_call.arg_count = arg_count;
+
+    return node;
+}
+
 ASTNode *parse_program(Parser *parser) {
     ASTNode **statements = NULL;
     int count = 0;
@@ -436,6 +566,7 @@ ASTNode *parse_program(Parser *parser) {
         switch (parser->current_token.type) {
             case TOKEN_KEYWORD_NUM:
             case TOKEN_KEYWORD_STR:
+            case TOKEN_KEYWORD_NIL:
             case TOKEN_KEYWORD_VAR:
                 stmt = parse_declaration(parser);
                 break;
@@ -447,6 +578,12 @@ ASTNode *parse_program(Parser *parser) {
                 break;
             case TOKEN_KEYWORD_WHILE:
                 stmt = parse_while(parser);
+                break;
+            case TOKEN_KEYWORD_FUN:
+                stmt = parse_function_declaration(parser);
+                break;
+            case TOKEN_KEYWORD_CALL:
+                stmt = parse_function_call(parser);
                 break;
             case TOKEN_IDENTIFIER:
                 stmt = parse_expression_statement(parser);

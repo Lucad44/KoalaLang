@@ -39,12 +39,15 @@ Token next_token(Lexer *lexer) {
         TokenType type = TOKEN_IDENTIFIER;
         if (strcmp(lexeme, "num") == 0) type = TOKEN_KEYWORD_NUM;
         else if (strcmp(lexeme, "str") == 0) type = TOKEN_KEYWORD_STR;
+        else if (strcmp(lexeme, "nil") == 0) type = TOKEN_KEYWORD_NIL;
         else if (strcmp(lexeme, "var") == 0) type = TOKEN_KEYWORD_VAR;
         else if (strcmp(lexeme, "if") == 0) type = TOKEN_KEYWORD_IF;
         else if (strcmp(lexeme, "elif") == 0) type = TOKEN_KEYWORD_ELIF;
         else if (strcmp(lexeme, "else") == 0) type = TOKEN_KEYWORD_ELSE;
         else if (strcmp(lexeme, "while") == 0) type = TOKEN_KEYWORD_WHILE;
         else if (strcmp(lexeme, "print") == 0) type = TOKEN_KEYWORD_PRINT;
+        else if (strcmp(lexeme, "fun") == 0) type = TOKEN_KEYWORD_FUN;
+        else if (strcmp(lexeme, "call") == 0) type = TOKEN_KEYWORD_CALL;
 
         return (Token) {type, lexeme, 0, NULL};
     }
@@ -157,6 +160,9 @@ Token next_token(Lexer *lexer) {
         case ';':
             lexer->current_pos++;
             return (Token) {TOKEN_SEMICOLON, NULL, 0, NULL};
+        case ',':
+            lexer->current_pos++;
+            return (Token) {TOKEN_COMMA, NULL, 0, NULL};
         default:
             fprintf(stderr, "Error: Unexpected character '%c' (ASCII %d)\n", current, current);
             exit(EXIT_FAILURE);

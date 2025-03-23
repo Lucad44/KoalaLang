@@ -18,6 +18,8 @@ add_executable(KoalaLang src/main.c
         src/memory.h
         src/hashmap.c
         src/hashmap.h
-        src/hashmap.c)
+        src/hashmap.c
+        src/functions.c
+        src/functions.h)
 
 add_compile_options(-std=c2x)

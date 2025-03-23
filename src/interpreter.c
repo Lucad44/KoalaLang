@@ -1,13 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "interpreter.h"
-
 #include <math.h>
-
+#include "interpreter.h"
 #include "hashmap.h"
 #include "variables.h"
+#include "functions.h"
 #include "memory.h"
 
 static void execute_block(const BlockNode *block) {
@@ -61,13 +59,20 @@ static double evaluate_expression(const ASTNode *node) {
                     return (long long) left | (long long) right;
                 case OP_XOR:
                     return (long long) left ^ (long long) right;
-                case OP_LESS: return left < right;
-                case OP_GREATER: return left > right;
-                case OP_EQUAL: return left == right;
-                case OP_NOT_EQUAL: return left != right;
-                case OP_LESS_EQUAL: return left <= right;
-                case OP_GREATER_EQUAL: return left >= right;
-                default: return 0;
+                case OP_LESS:
+                    return left < right;
+                case OP_GREATER:
+                    return left > right;
+                case OP_EQUAL:
+                    return left == right;
+                case OP_NOT_EQUAL:
+                    return left != right;
+                case OP_LESS_EQUAL:
+                    return left <= right;
+                case OP_GREATER_EQUAL:
+                    return left >= right;
+                default:
+                    return 0;
             }
         }
         default:
@@ -90,6 +95,12 @@ static void execute_var_decl(const VarDeclNode *node) {
                 .name = node->name,
                 .type = VAR_STR,
                 .value = { .str_val = str_val }
+            });
+        } else if (node->type == VAR_NIL) {
+            hashmap_set(variable_map, &(Variable) {
+                .name = node->name,
+                .type = VAR_NIL,
+                .value = { .nil_val = NULL }
             });
         }
     } else if (node->init_expr->type == NODE_EXPR_BINARY || node->init_expr->type == NODE_EXPR_VARIABLE) {
@@ -129,7 +140,9 @@ static char* get_string_value(const ASTNode *node) {
             return strdup("<undefined>");
         }
         default:
-            return strdup("<unknown>");
+            const double ret = evaluate_expression(node);
+            snprintf(buffer, sizeof(buffer), "%g", ret);
+            return strdup(buffer);
     }
 }
 
@@ -173,6 +186,12 @@ void execute(const ASTNode *node) {
             break;
         case NODE_WHILE:
             execute_while(&node->data.while_stmt);
+            break;
+        case NODE_FUNC_DECL:
+            execute_func_decl(&node->data.func_decl);
+            break;
+        case NODE_FUNC_CALL:
+            execute_func_call(&node->data.func_call);
             break;
         default:
             fprintf(stderr, "Unknown node type: %d\n", node->type);
@@ -252,10 +271,10 @@ void execute_postfix(const PostfixExprNode *node) {
     switch (node->op) {
         case OP_INC:
             variable->value.num_val++;
-        break;
+            break;
         case OP_DEC:
             variable->value.num_val--;
-        break;
+            break;
     }
 }
 
@@ -282,4 +301,54 @@ void execute_while(const WhileNode *while_node) {
     while (evaluate_condition(while_node->condition)) {
         execute(while_node->body);
     }
+}
+
+void execute_func_decl(const FuncDeclNode *func_decl) {
+    hashmap_set(function_map, &(Function) {
+        .name = func_decl->name,
+        .type = func_decl->type,
+        .param_count = func_decl->param_count,
+        .parameters = func_decl->parameters,
+        .body = func_decl->body
+    });
+}
+
+void execute_func_call(const FuncCallNode *func_call) {
+    const Function *function = hashmap_get(function_map, &(Function) {
+        .name = func_call->name
+    });
+
+    if (!function) {
+        fprintf(stderr, "Undefined function: %s\n", func_call->name);
+        exit(EXIT_FAILURE);
+    }
+
+    if (func_call->arg_count != function->param_count) {
+        fprintf(stderr, "Function %s expects %d arguments, but got %d\n",
+            func_call->name, function->param_count, func_call->arg_count);
+        exit(EXIT_FAILURE);
+    }
+
+    for (int i = 0; i < func_call->arg_count; i++) {
+        const Parameter *param = &function->parameters[i];
+        const ASTNode *arg = func_call->arguments[i];
+
+        if (param->type[0] == 'n') {
+            const double value = evaluate_expression(arg);
+            hashmap_set(variable_map, &(Variable) {
+                .name = param->name,
+                .type = VAR_NUM,
+                .value = { .num_val = value }
+            });
+        } else if (param->type[0] == 's') {
+            char *value = get_string_value(arg);
+            hashmap_set(variable_map, &(Variable) {
+                .name = param->name,
+                .type = VAR_STR,
+                .value = { .str_val = value }
+            });
+        }
+    }
+
+    execute(function->body);
 }
