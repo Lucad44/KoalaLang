@@ -11,6 +11,4 @@ void* safe_realloc(void *ptr, size_t new_size);
 
 void free_ast(void *node);
 
-void free_variable_map(void);
-
 #endif // MEMORY_H

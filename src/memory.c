@@ -67,7 +67,3 @@ void free_ast(void *node) {
     }
     free(ast_node);
 }
-
-void free_variable_map(void) {
-    hashmap_free(variable_map);
-}

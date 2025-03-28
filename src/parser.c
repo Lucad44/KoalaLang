@@ -59,7 +59,6 @@ ASTNode *parse_binary_expr(Parser *parser, ASTNode *left, const int min_prec) {
         BinaryOperator op;
         int prec;
     } ops[] = {
-        // Precedence levels from lowest to highest
         {TOKEN_OPERATOR_OR, OP_OR, 1},           // |
         {TOKEN_OPERATOR_XOR, OP_XOR, 2},         // ^
         {TOKEN_OPERATOR_AND, OP_AND, 3},         // &

@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
     init_parser(&parser, &lexer);
     ASTNode *program = parse_program(&parser);
 
-    execute(program);
+    execute(program, variable_map);
 
     printf("\n-- iterate over all variables (hashmap_scan) --\n");
     hashmap_scan(variable_map, variable_iter, NULL);
@@ -66,7 +66,7 @@ int main(int argc, char **argv) {
     // Cleanup
     free_ast(program);
     free(source);
-    free_variable_map();
+    hashmap_free(variable_map);
 
     return 0;
 }

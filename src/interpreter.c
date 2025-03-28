@@ -3,33 +3,43 @@
 #include <string.h>
 #include <math.h>
 #include "interpreter.h"
-#include "hashmap.h"
 #include "variables.h"
 #include "functions.h"
 #include "memory.h"
 
-static void execute_block(const BlockNode *block) {
+Variable *get_variable(struct hashmap *scope, char *name) {
+    Variable *variable = (Variable *) hashmap_get(scope, &(Variable) {
+        .name = name
+    });
+
+    if (!variable) {
+        variable = (Variable *) hashmap_get(variable_map, &(Variable) {
+            .name = name
+        });
+    }
+    return variable == NULL ? NULL : variable;
+}
+
+static void execute_block(const BlockNode *block, struct hashmap *scope) {
     for (int i = 0; i < block->stmt_count; i++) {
-        execute(block->statements[i]);
+        execute(block->statements[i], scope);
     }
 }
 
-static double evaluate_expression(const ASTNode *node) {
+static double evaluate_expression(const ASTNode *node, struct hashmap *scope) {
     switch (node->type) {
         case NODE_EXPR_LITERAL:
             return node->data.num_literal.num_val;
         case NODE_EXPR_VARIABLE: {
-            const Variable *variable = hashmap_get(variable_map, &(Variable) {
-                .name = node->data.variable.name
-            });
+            const Variable *variable = get_variable(scope, node->data.variable.name);
             if (variable && variable->type == VAR_NUM) {
                 return variable->value.num_val;
             }
             return 0;
         }
         case NODE_EXPR_BINARY: {
-            const double left = evaluate_expression(node->data.binary_expr.left);
-            const double right = evaluate_expression(node->data.binary_expr.right);
+            const double left = evaluate_expression(node->data.binary_expr.left, scope);
+            const double right = evaluate_expression(node->data.binary_expr.right, scope);
 
             switch (node->data.binary_expr.op) {
                 case OP_PLUS: return left + right;
@@ -80,24 +90,24 @@ static double evaluate_expression(const ASTNode *node) {
     }
 }
 
-static void execute_var_decl(const VarDeclNode *node) {
+static void execute_var_decl(const VarDeclNode *node, struct hashmap *scope) {
     if (node->init_expr->type == NODE_EXPR_LITERAL) {
         if (node->type == VAR_NUM || node->type == -1) {
             const double num_val = node->init_expr->data.num_literal.num_val;
-            hashmap_set(variable_map, &(Variable) {
+            hashmap_set(scope, &(Variable) {
                 .name = node->name,
                 .type = VAR_NUM,
                 .value = { .num_val = num_val }
             });
         } else if (node->type == VAR_STR) {
             char *str_val = node->init_expr->data.str_literal.str_val;
-            hashmap_set(variable_map, &(Variable) {
+            hashmap_set(scope, &(Variable) {
                 .name = node->name,
                 .type = VAR_STR,
                 .value = { .str_val = str_val }
             });
         } else if (node->type == VAR_NIL) {
-            hashmap_set(variable_map, &(Variable) {
+            hashmap_set(scope, &(Variable) {
                 .name = node->name,
                 .type = VAR_NIL,
                 .value = { .nil_val = NULL }
@@ -105,8 +115,8 @@ static void execute_var_decl(const VarDeclNode *node) {
         }
     } else if (node->init_expr->type == NODE_EXPR_BINARY || node->init_expr->type == NODE_EXPR_VARIABLE) {
         if (node->type == VAR_NUM || node->type == -1) {
-            const double num_val = evaluate_expression(node->init_expr);
-            hashmap_set(variable_map, &(Variable) {
+            const double num_val = evaluate_expression(node->init_expr, scope);
+            hashmap_set(scope, &(Variable) {
                 .name = node->name,
                 .type = VAR_NUM,
                 .value = { .num_val = num_val }
@@ -115,7 +125,7 @@ static void execute_var_decl(const VarDeclNode *node) {
     }
 }
 
-static char* get_string_value(const ASTNode *node) {
+static char* get_string_value(const ASTNode *node, struct hashmap *scope) {
     char buffer[1024];
 
     switch (node->type) {
@@ -127,9 +137,7 @@ static char* get_string_value(const ASTNode *node) {
             return strdup(buffer);
         }
         case NODE_EXPR_VARIABLE: {
-            const Variable *variable = hashmap_get(variable_map, &(Variable) {
-                .name = node->data.variable.name
-            });
+            const Variable *variable = get_variable(scope, node->data.variable.name);
             if (variable) {
                 if (variable->type == VAR_STR) {
                     return strdup(variable->value.str_val);
@@ -140,17 +148,17 @@ static char* get_string_value(const ASTNode *node) {
             return strdup("<undefined>");
         }
         default:
-            const double ret = evaluate_expression(node);
+            const double ret = evaluate_expression(node, scope);
             snprintf(buffer, sizeof(buffer), "%g", ret);
             return strdup(buffer);
     }
 }
 
-static void execute_print(const PrintNode *node) {
+static void execute_print(const PrintNode *node, struct hashmap *scope) {
     char *result = strdup("");
 
     for (int i = 0; i < node->expr_count; i++) {
-        char *part = get_string_value(node->expr_list[i]);
+        char *part = get_string_value(node->expr_list[i], scope);
         const size_t new_len = strlen(result) + strlen(part) + 1;
         char *new_result = safe_malloc(new_len);
 
@@ -167,31 +175,31 @@ static void execute_print(const PrintNode *node) {
     free(result);
 }
 
-void execute(const ASTNode *node) {
+void execute(const ASTNode *node, struct hashmap *scope) {
     switch (node->type) {
         case NODE_VAR_DECL:
-            execute_var_decl(&node->data.var_decl);
+            execute_var_decl(&node->data.var_decl, scope);
             break;
         case NODE_PRINT:
-            execute_print(&node->data.print);
+            execute_print(&node->data.print, scope);
             break;
         case NODE_BLOCK:
-            execute_block(&node->data.block);
+            execute_block(&node->data.block, scope);
             break;
         case NODE_EXPR_POSTFIX:
-            execute_postfix(&node->data.postfix_expr);
+            execute_postfix(&node->data.postfix_expr, scope);
             break;
         case NODE_IF:
-            execute_if(&node->data.if_stmt);
+            execute_if(&node->data.if_stmt, scope);
             break;
         case NODE_WHILE:
-            execute_while(&node->data.while_stmt);
+            execute_while(&node->data.while_stmt, scope);
             break;
         case NODE_FUNC_DECL:
             execute_func_decl(&node->data.func_decl);
             break;
         case NODE_FUNC_CALL:
-            execute_func_call(&node->data.func_call);
+            execute_func_call(&node->data.func_call, scope);
             break;
         default:
             fprintf(stderr, "Unknown node type: %d\n", node->type);
@@ -199,7 +207,7 @@ void execute(const ASTNode *node) {
     }
 }
 
-int evaluate_condition(ASTNode *condition) {
+int evaluate_condition(ASTNode *condition, struct hashmap *scope) {
     if (!condition) return 0;
 
     switch (condition->type) {
@@ -207,9 +215,7 @@ int evaluate_condition(ASTNode *condition) {
             return condition->data.num_literal.num_val != 0;
 
         case NODE_EXPR_VARIABLE: {
-            const Variable *variable = hashmap_get(variable_map, &(Variable) {
-                .name = condition->data.variable.name
-            });
+            const Variable *variable = get_variable(scope, condition->data.variable.name);
             if (variable && variable->type == VAR_NUM) {
                 return variable->value.num_val != 0;
             }
@@ -222,18 +228,14 @@ int evaluate_condition(ASTNode *condition) {
             if (condition->data.binary_expr.left->type == NODE_EXPR_LITERAL) {
                 left = condition->data.binary_expr.left->data.num_literal.num_val;
             } else if (condition->data.binary_expr.left->type == NODE_EXPR_VARIABLE) {
-                const Variable *variable = hashmap_get(variable_map, &(Variable) {
-                    .name = condition->data.binary_expr.left->data.variable.name
-                });
+                const Variable *variable = get_variable(scope, condition->data.binary_expr.left->data.variable.name);
                 if (variable && variable->type == VAR_NUM) left = variable->value.num_val;
             }
 
             if (condition->data.binary_expr.right->type == NODE_EXPR_LITERAL) {
                 right = condition->data.binary_expr.right->data.num_literal.num_val;
             } else if (condition->data.binary_expr.right->type == NODE_EXPR_VARIABLE) {
-                const Variable *variable = hashmap_get(variable_map, &(Variable) {
-                    .name = condition->data.binary_expr.right->data.variable.name
-                });
+                const Variable *variable = get_variable(scope, condition->data.binary_expr.right->data.variable.name);
                 if (variable && variable->type == VAR_NUM) right = variable->value.num_val;
             }
 
@@ -253,10 +255,8 @@ int evaluate_condition(ASTNode *condition) {
     return 0;
 }
 
-void execute_postfix(const PostfixExprNode *node) {
-    Variable *variable = (Variable *) hashmap_get(variable_map, &(Variable) {
-        .name = node->var_name
-    });
+void execute_postfix(const PostfixExprNode *node, struct hashmap *scope) {
+    Variable *variable = get_variable(scope, node->var_name);
 
     if (!variable) {
         fprintf(stderr, "Undefined variable: %s\n", node->var_name);
@@ -278,29 +278,44 @@ void execute_postfix(const PostfixExprNode *node) {
     }
 }
 
-void execute_if(const IfNode *if_node) {
-    if (evaluate_condition(if_node->condition)) {
-        execute(if_node->body);
+void execute_if(const IfNode *if_node, struct hashmap *scope) {
+    struct hashmap *if_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
+        variable_hash, variable_compare, NULL, NULL);
+
+    if (evaluate_condition(if_node->condition, scope)) {
+        execute(if_node->body, if_scope);
         return;
     }
 
     for (int i = 0; i < if_node->elif_count; i++) {
         const ASTNode *elif_node = if_node->elif_nodes[i];
-        if (evaluate_condition(elif_node->data.if_stmt.condition)) {
-            execute(elif_node->data.if_stmt.body);
+        if_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
+            variable_hash, variable_compare, NULL, NULL);
+        if (evaluate_condition(elif_node->data.if_stmt.condition, scope)) {
+            execute(elif_node->data.if_stmt.body, if_scope);
+            hashmap_free(if_scope);
             return;
         }
     }
 
+    if_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
+            variable_hash, variable_compare, NULL, NULL);
     if (if_node->else_body) {
-        execute(if_node->else_body);
+        execute(if_node->else_body, if_scope);
     }
+
+    hashmap_free(if_scope);
 }
 
-void execute_while(const WhileNode *while_node) {
-    while (evaluate_condition(while_node->condition)) {
-        execute(while_node->body);
+void execute_while(const WhileNode *while_node, struct hashmap *scope) {
+    struct hashmap *while_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
+        variable_hash, variable_compare, NULL, NULL);
+
+    while (evaluate_condition(while_node->condition, scope)) {
+        execute(while_node->body, while_scope);
     }
+
+    hashmap_free(while_scope);
 }
 
 void execute_func_decl(const FuncDeclNode *func_decl) {
@@ -313,7 +328,7 @@ void execute_func_decl(const FuncDeclNode *func_decl) {
     });
 }
 
-void execute_func_call(const FuncCallNode *func_call) {
+void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope) {
     const Function *function = hashmap_get(function_map, &(Function) {
         .name = func_call->name
     });
@@ -329,20 +344,23 @@ void execute_func_call(const FuncCallNode *func_call) {
         exit(EXIT_FAILURE);
     }
 
+    struct hashmap *function_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
+        variable_hash, variable_compare, NULL, NULL);
+
     for (int i = 0; i < func_call->arg_count; i++) {
         const Parameter *param = &function->parameters[i];
         const ASTNode *arg = func_call->arguments[i];
 
         if (param->type[0] == 'n') {
-            const double value = evaluate_expression(arg);
-            hashmap_set(variable_map, &(Variable) {
+            const double value = evaluate_expression(arg, scope);
+            hashmap_set(function_scope, &(Variable) {
                 .name = param->name,
                 .type = VAR_NUM,
                 .value = { .num_val = value }
             });
         } else if (param->type[0] == 's') {
-            char *value = get_string_value(arg);
-            hashmap_set(variable_map, &(Variable) {
+            char *value = get_string_value(arg, scope);
+            hashmap_set(function_scope, &(Variable) {
                 .name = param->name,
                 .type = VAR_STR,
                 .value = { .str_val = value }
@@ -350,5 +368,6 @@ void execute_func_call(const FuncCallNode *func_call) {
         }
     }
 
-    execute(function->body);
+    execute(function->body, function_scope);
+    hashmap_free(function_scope);
 }

@@ -2,19 +2,23 @@
 #define INTERPRETER_H
 
 #include "ast.h"
+#include "variables.h"
+#include "hashmap.h"
 
-void execute(const ASTNode *node);
+Variable *get_variable(struct hashmap *scope, char *name);
 
-int evaluate_condition(ASTNode *condition);
+void execute(const ASTNode *node, struct hashmap *scope);
 
-void execute_postfix(const PostfixExprNode *node);
+int evaluate_condition(ASTNode *condition, struct hashmap *scope);
 
-void execute_if(const IfNode *if_node);
+void execute_postfix(const PostfixExprNode *node, struct hashmap *scope);
 
-void execute_while(const WhileNode *while_node);
+void execute_if(const IfNode *if_node, struct hashmap *scope);
+
+void execute_while(const WhileNode *while_node, struct hashmap *scope);
 
 void execute_func_decl(const FuncDeclNode *func_decl);
 
-void execute_func_call(const FuncCallNode *func_call);
+void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope);
 
 #endif //INTERPRETER_H
