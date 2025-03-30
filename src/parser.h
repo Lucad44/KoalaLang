@@ -35,4 +35,6 @@ ASTNode *parse_function_declaration(Parser *parser);
 
 ASTNode *parse_function_call(Parser *parser);
 
+ASTNode *parse_return(Parser *parser);
+
 #endif

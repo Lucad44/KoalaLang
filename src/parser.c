@@ -1,6 +1,7 @@
 #include "parser.h"
 #include "memory.h"
 #include "variables.h"
+#include "interpreter.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,14 +22,14 @@ ASTNode *parse_primary(Parser *parser) {
 
     switch (parser->current_token.type) {
         case TOKEN_LPAREN: {
-            advance(parser); // consume '('
+            advance(parser);
             ASTNode *expr = parse_expression(parser);
             
             if (parser->current_token.type != TOKEN_RPAREN) {
                 fprintf(stderr, "Expected closing parenthesis ')'\n");
                 exit(EXIT_FAILURE);
             }
-            advance(parser); // consume ')'
+            advance(parser);
             return expr;
         }
         case TOKEN_NUMBER:
@@ -41,6 +42,44 @@ ASTNode *parse_primary(Parser *parser) {
             node->data.str_literal.str_val = strdup(parser->current_token.str_value);
             advance(parser);
             break;
+        case TOKEN_KEYWORD_CALL: {
+            advance(parser);
+            if (parser->current_token.type != TOKEN_IDENTIFIER) {
+                fprintf(stderr, "Expected function name after 'call'\n");
+                exit(EXIT_FAILURE);
+            }
+            char *func_name = strdup(parser->current_token.lexeme);
+            advance(parser);
+
+            if (parser->current_token.type != TOKEN_LPAREN) {
+                fprintf(stderr, "Expected '(' after function name\n");
+                exit(EXIT_FAILURE);
+            }
+            advance(parser);
+
+            ASTNode **arguments = NULL;
+            int arg_count = 0;
+
+            while (parser->current_token.type != TOKEN_RPAREN) {
+                ASTNode *arg = parse_expression(parser);
+                arguments = safe_realloc(arguments, (arg_count + 1) * sizeof(ASTNode *));
+                arguments[arg_count++] = arg;
+
+                if (parser->current_token.type == TOKEN_RPAREN) break;
+                if (parser->current_token.type != TOKEN_COMMA) {
+                    fprintf(stderr, "Expected ',' or ')' after argument\n");
+                    exit(EXIT_FAILURE);
+                }
+                advance(parser);
+            }
+            advance(parser);
+
+            node->type = NODE_FUNC_CALL;
+            node->data.func_call.name = func_name;
+            node->data.func_call.arguments = arguments;
+            node->data.func_call.arg_count = arg_count;
+            break;
+        }
         case TOKEN_IDENTIFIER:
             node->type = NODE_EXPR_VARIABLE;
             node->data.variable.name = strdup(parser->current_token.lexeme);
@@ -204,8 +243,8 @@ ASTNode *parse_declaration(Parser *parser) {
     ASTNode *init_expr = parse_expression(parser);
 
     if (parser->current_token.type != TOKEN_SEMICOLON) {
-    fprintf(stderr, "Expected ';' after declaration\n");
-    exit(EXIT_FAILURE);
+        fprintf(stderr, "Expected ';' after declaration\n");
+        exit(EXIT_FAILURE);
     }
     advance(parser);
 
@@ -390,6 +429,9 @@ ASTNode *parse_braced_block(Parser *parser) {
             case TOKEN_KEYWORD_CALL:
                 stmt = parse_function_call(parser);
                 break;
+            case TOKEN_KEYWORD_RETURN:
+                stmt = parse_return(parser);
+                break;
             case TOKEN_IDENTIFIER:
                 stmt = parse_expression_statement(parser);
                 break;
@@ -555,6 +597,23 @@ ASTNode *parse_function_call(Parser *parser) {
     return node;
 }
 
+ASTNode *parse_return(Parser* parser) {
+    advance(parser);
+
+    ASTNode *expr = parse_expression(parser);
+
+    if (parser->current_token.type != TOKEN_SEMICOLON) {
+        fprintf(stderr, "Error: Expected semicolon after return statement\n");
+        exit(EXIT_FAILURE);
+    }
+    advance(parser);
+
+    ASTNode *node = safe_malloc(sizeof(ASTNode));
+    node->type = NODE_RETURN;
+    node->data.return_stmt.expr = expr;
+    return node;
+}
+
 ASTNode *parse_program(Parser *parser) {
     ASTNode **statements = NULL;
     int count = 0;
@@ -583,6 +642,9 @@ ASTNode *parse_program(Parser *parser) {
                 break;
             case TOKEN_KEYWORD_CALL:
                 stmt = parse_function_call(parser);
+                break;
+            case TOKEN_KEYWORD_RETURN:
+                stmt = parse_return(parser);
                 break;
             case TOKEN_IDENTIFIER:
                 stmt = parse_expression_statement(parser);

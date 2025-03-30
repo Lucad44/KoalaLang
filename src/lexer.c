@@ -48,6 +48,7 @@ Token next_token(Lexer *lexer) {
         else if (strcmp(lexeme, "print") == 0) type = TOKEN_KEYWORD_PRINT;
         else if (strcmp(lexeme, "fun") == 0) type = TOKEN_KEYWORD_FUN;
         else if (strcmp(lexeme, "call") == 0) type = TOKEN_KEYWORD_CALL;
+        else if (strcmp(lexeme, "return") == 0) type = TOKEN_KEYWORD_RETURN;
 
         return (Token) {type, lexeme, 0, NULL};
     }

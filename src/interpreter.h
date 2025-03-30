@@ -21,4 +21,8 @@ void execute_func_decl(const FuncDeclNode *func_decl);
 
 void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope);
 
+void execute_return(const ReturnNode *node, struct hashmap *scope);
+
+char* get_string_value(const ASTNode *node, struct hashmap *scope);
+
 #endif //INTERPRETER_H

@@ -8,6 +8,22 @@ struct hashmap *variable_map = NULL;
 static void __attribute__((constructor)) init_variable_map() {
     variable_map = hashmap_new(sizeof(Variable), 0, 0, 0,
         variable_hash, variable_compare, NULL, NULL);
+
+    hashmap_set(variable_map, &(Variable) {
+        .name = "__FUNCTION_NUM_RET_VAL",
+        .type = VAR_NUM,
+        .value = { .num_val = 0 }
+    });
+    hashmap_set(variable_map, &(Variable) {
+        .name = "__FUNCTION_STR_RET_VAL",
+        .type = VAR_STR,
+        .value = { .str_val = "" }
+    });
+    hashmap_set(variable_map, &(Variable) {
+        .name = "__FUNCTION_RETURN_FLAG",
+        .type = VAR_NUM,
+        .value = { .num_val = 0 }
+    });
 }
 
 int variable_compare(const void *a, const void *b, void *udata) {

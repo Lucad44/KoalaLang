@@ -23,6 +23,11 @@ Variable *get_variable(struct hashmap *scope, char *name) {
 static void execute_block(const BlockNode *block, struct hashmap *scope) {
     for (int i = 0; i < block->stmt_count; i++) {
         execute(block->statements[i], scope);
+
+        const Variable *return_flag = get_variable(scope, "__FUNCTION_RETURN_FLAG");
+        if (return_flag && return_flag->type == VAR_NUM && return_flag->value.num_val == 1) {
+            break;
+        }
     }
 }
 
@@ -85,6 +90,15 @@ static double evaluate_expression(const ASTNode *node, struct hashmap *scope) {
                     return 0;
             }
         }
+        case NODE_FUNC_CALL: {
+            execute_func_call(&node->data.func_call, scope);
+            
+            const Variable *return_val = get_variable(variable_map, "__FUNCTION_NUM_RET_VAL");
+            if (return_val && return_val->type == VAR_NUM) {
+                return return_val->value.num_val;
+            }
+            return 0;
+        }
         default:
             return 0;
     }
@@ -113,7 +127,9 @@ static void execute_var_decl(const VarDeclNode *node, struct hashmap *scope) {
                 .value = { .nil_val = NULL }
             });
         }
-    } else if (node->init_expr->type == NODE_EXPR_BINARY || node->init_expr->type == NODE_EXPR_VARIABLE) {
+    } else if (node->init_expr->type == NODE_EXPR_BINARY || 
+               node->init_expr->type == NODE_EXPR_VARIABLE ||
+               node->init_expr->type == NODE_FUNC_CALL) {
         if (node->type == VAR_NUM || node->type == -1) {
             const double num_val = evaluate_expression(node->init_expr, scope);
             hashmap_set(scope, &(Variable) {
@@ -121,11 +137,18 @@ static void execute_var_decl(const VarDeclNode *node, struct hashmap *scope) {
                 .type = VAR_NUM,
                 .value = { .num_val = num_val }
             });
+        } else if (node->type == VAR_STR) {
+            char *str_val = get_string_value(node->init_expr, scope);
+            hashmap_set(scope, &(Variable) {
+                .name = node->name,
+                .type = VAR_STR,
+                .value = { .str_val = str_val }
+            });
         }
     }
 }
 
-static char* get_string_value(const ASTNode *node, struct hashmap *scope) {
+char *get_string_value(const ASTNode *node, struct hashmap *scope) {
     char buffer[1024];
 
     switch (node->type) {
@@ -146,6 +169,22 @@ static char* get_string_value(const ASTNode *node, struct hashmap *scope) {
                 return strdup(buffer);
             }
             return strdup("<undefined>");
+        }
+        case NODE_FUNC_CALL: {
+            execute_func_call(&node->data.func_call, scope);
+            
+            const Variable *str_val = get_variable(variable_map, "__FUNCTION_STR_RET_VAL");
+            if (str_val && str_val->type == VAR_STR) {
+                return strdup(str_val->value.str_val);
+            }
+            
+            const Variable *num_val = get_variable(variable_map, "__FUNCTION_NUM_RET_VAL");
+            if (num_val && num_val->type == VAR_NUM) {
+                snprintf(buffer, sizeof(buffer), "%g", num_val->value.num_val);
+                return strdup(buffer);
+            }
+            
+            return strdup("<no return value>");
         }
         default:
             const double ret = evaluate_expression(node, scope);
@@ -200,6 +239,9 @@ void execute(const ASTNode *node, struct hashmap *scope) {
             break;
         case NODE_FUNC_CALL:
             execute_func_call(&node->data.func_call, scope);
+            break;
+        case NODE_RETURN:
+            execute_return(&node->data.return_stmt, scope);
             break;
         default:
             fprintf(stderr, "Unknown node type: %d\n", node->type);
@@ -370,4 +412,64 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope) {
 
     execute(function->body, function_scope);
     hashmap_free(function_scope);
+}
+
+void execute_return(const ReturnNode *node, struct hashmap *scope) {
+    if (node->expr->type == NODE_EXPR_LITERAL) {
+        if (node->expr->data.str_literal.str_val) {
+            hashmap_set(variable_map, &(Variable) {
+                .name = "__FUNCTION_STR_RET_VAL",
+                .type = VAR_STR,
+                .value = { .str_val = strdup(node->expr->data.str_literal.str_val) }
+            });
+        } else {
+            hashmap_set(variable_map, &(Variable) {
+                .name = "__FUNCTION_NUM_RET_VAL",
+                .type = VAR_NUM,
+                .value = { .num_val = node->expr->data.num_literal.num_val }
+            });
+        }
+    } else if (node->expr->type == NODE_EXPR_BINARY || 
+               node->expr->type == NODE_EXPR_VARIABLE || 
+               node->expr->type == NODE_FUNC_CALL)
+    {
+        if (node->expr->type == NODE_EXPR_VARIABLE) {
+            const Variable *var = get_variable(scope, node->expr->data.variable.name);
+            if (var && var->type == VAR_STR) {
+                hashmap_set(variable_map, &(Variable) {
+                    .name = "__FUNCTION_STR_RET_VAL",
+                    .type = VAR_STR,
+                    .value = { .str_val = strdup(var->value.str_val) }
+                });
+                goto set_return_flag;
+            }
+        }
+        
+        if (node->expr->type == NODE_FUNC_CALL) {
+            execute_func_call(&node->expr->data.func_call, scope);
+            const Variable *str_ret = get_variable(variable_map, "__FUNCTION_STR_RET_VAL");
+            if (str_ret && str_ret->type == VAR_STR) {
+                hashmap_set(variable_map, &(Variable) {
+                    .name = "__FUNCTION_STR_RET_VAL",
+                    .type = VAR_STR,
+                    .value = { .str_val = strdup(str_ret->value.str_val) }
+                });
+                goto set_return_flag;
+            }
+        }
+
+        const double num_val = evaluate_expression(node->expr, scope);
+        hashmap_set(variable_map, &(Variable) {
+            .name = "__FUNCTION_NUM_RET_VAL",
+            .type = VAR_NUM,
+            .value = { .num_val = num_val }
+        });
+    }
+
+set_return_flag:
+    hashmap_set(variable_map, &(Variable) {
+        .name = "__FUNCTION_RETURN_FLAG",
+        .type = VAR_NUM,
+        .value = { .num_val = 1 }
+    });
 }

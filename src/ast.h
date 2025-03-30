@@ -6,6 +6,7 @@ typedef enum {
     NODE_PRINT,
     NODE_FUNC_DECL,
     NODE_FUNC_CALL,
+    NODE_RETURN,
     NODE_IF,
     NODE_ELIF,
     NODE_ELSE,
@@ -113,6 +114,10 @@ typedef struct {
     int arg_count;
 } FuncCallNode;
 
+typedef struct {
+    ASTNode *expr;
+} ReturnNode;
+
 struct ASTNode {
     NodeType type;
     union {
@@ -128,6 +133,7 @@ struct ASTNode {
         PostfixExprNode postfix_expr;
         FuncDeclNode func_decl;
         FuncCallNode func_call;
+        ReturnNode return_stmt;
     } data;
 };
 
