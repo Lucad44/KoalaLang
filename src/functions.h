@@ -6,7 +6,6 @@
 
 typedef struct {
     char *name;
-    char *type;
     int param_count;
     Parameter *parameters;
     ASTNode *body;

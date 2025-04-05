@@ -473,16 +473,6 @@ ASTNode *parse_expression_statement(Parser *parser) {
 ASTNode *parse_function_declaration(Parser *parser) {
     advance(parser);
 
-    if (parser->current_token.type != TOKEN_KEYWORD_NUM && 
-        parser->current_token.type != TOKEN_KEYWORD_STR &&
-        parser->current_token.type != TOKEN_KEYWORD_NIL)
-    {
-        fprintf(stderr, "Expected return type (num, str, or nil)\n");
-        exit(EXIT_FAILURE);
-    }
-    char *return_type = strdup(parser->current_token.lexeme);
-    advance(parser);
-
     if (parser->current_token.type != TOKEN_IDENTIFIER) {
         fprintf(stderr, "Expected function name\n");
         exit(EXIT_FAILURE);
@@ -538,7 +528,6 @@ ASTNode *parse_function_declaration(Parser *parser) {
     ASTNode *node = safe_malloc(sizeof(ASTNode));
     node->type = NODE_FUNC_DECL;
     node->data.func_decl.name = func_name;
-    node->data.func_decl.type = return_type;
     node->data.func_decl.parameters = parameters;
     node->data.func_decl.param_count = param_count;
     node->data.func_decl.body = body;

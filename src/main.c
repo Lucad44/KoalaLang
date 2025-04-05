@@ -54,7 +54,8 @@ int main(int argc, char **argv) {
     init_parser(&parser, &lexer);
     ASTNode *program = parse_program(&parser);
 
-    execute(program, variable_map);
+    ReturnContext ret_ctx = { .is_return = 0, .type = RET_NONE };
+    execute(program, variable_map, &ret_ctx);
 
     printf("\n-- iterate over all variables (hashmap_scan) --\n");
     hashmap_scan(variable_map, variable_iter, NULL);

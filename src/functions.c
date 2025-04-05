@@ -17,7 +17,7 @@ int function_compare(const void *a, const void *b, void *udata) {
 
 bool function_iter(const void *item, void *udata) {
     const Function *function = item;
-    printf("\n%s %s(", function->type, function->name);
+    printf("\n%s(", function->name);
     for (int i = 0; i < function->param_count; i++) {
         printf("%s %s, ", function->parameters[i].type, function->parameters[i].name);
     }

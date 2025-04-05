@@ -11,14 +11,15 @@ typedef enum {
     VAR_NIL,
 } VarType;
 
+typedef  struct {
+    double num_val;
+    char *str_val;
+} VariableValue;
+
 typedef struct {
     char *name;
     VarType type;
-    union {
-        double num_val;
-        char *str_val;
-        void *nil_val;
-    } value;
+    VariableValue value;
 } Variable;
 
 extern struct hashmap *variable_map;

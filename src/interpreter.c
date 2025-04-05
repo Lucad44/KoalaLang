@@ -3,9 +3,18 @@
 #include <string.h>
 #include <math.h>
 #include "interpreter.h"
+
+#include <setjmp.h>
+
 #include "variables.h"
 #include "functions.h"
 #include "memory.h"
+
+jmp_buf *current_jmp_buf = NULL;
+
+ReturnContextNode* current_return_ctx = NULL;
+
+double return_value = 0.0;
 
 Variable *get_variable(struct hashmap *scope, char *name) {
     Variable *variable = (Variable *) hashmap_get(scope, &(Variable) {
@@ -20,21 +29,20 @@ Variable *get_variable(struct hashmap *scope, char *name) {
     return variable == NULL ? NULL : variable;
 }
 
-static void execute_block(const BlockNode *block, struct hashmap *scope) {
+static void execute_block(const BlockNode *block, struct hashmap *scope, ReturnContext *ret_ctx) {
     for (int i = 0; i < block->stmt_count; i++) {
-        execute(block->statements[i], scope);
-
-        const Variable *return_flag = get_variable(scope, "__FUNCTION_RETURN_FLAG");
-        if (return_flag && return_flag->type == VAR_NUM && return_flag->value.num_val == 1) {
+        execute(block->statements[i], scope, ret_ctx);
+        if (ret_ctx->is_return) {
             break;
         }
     }
 }
 
-static double evaluate_expression(const ASTNode *node, struct hashmap *scope) {
+static double evaluate_expression(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
     switch (node->type) {
         case NODE_EXPR_LITERAL:
             return node->data.num_literal.num_val;
+
         case NODE_EXPR_VARIABLE: {
             const Variable *variable = get_variable(scope, node->data.variable.name);
             if (variable && variable->type == VAR_NUM) {
@@ -42,69 +50,94 @@ static double evaluate_expression(const ASTNode *node, struct hashmap *scope) {
             }
             return 0;
         }
-        case NODE_EXPR_BINARY: {
-            const double left = evaluate_expression(node->data.binary_expr.left, scope);
-            const double right = evaluate_expression(node->data.binary_expr.right, scope);
 
+        case NODE_EXPR_BINARY: {
+            ReturnContext left_eval_ctx = { .is_return = 0, .type = RET_NONE };
+            ReturnContext right_eval_ctx = { .is_return = 0, .type = RET_NONE };
+
+            const double left = evaluate_expression(node->data.binary_expr.left, scope, &left_eval_ctx);
+            const double right = evaluate_expression(node->data.binary_expr.right, scope, &right_eval_ctx);
+
+            double result = 0;
             switch (node->data.binary_expr.op) {
-                case OP_PLUS: return left + right;
-                case OP_MINUS: return left - right;
-                case OP_MULTIPLY: return left * right;
-                case OP_DIVIDE: 
+                case OP_PLUS:
+                    result = left + right;
+                    break;
+                case OP_MINUS:
+                    result = left - right;
+                    break;
+                case OP_MULTIPLY:
+                    result = left * right;
+                    break;
+                case OP_DIVIDE:
                     if (right == 0) {
                         fprintf(stderr, "Error: Division by zero\n");
                         exit(EXIT_FAILURE);
                     }
-                    return left / right;
+                    result = left / right;
+                    break;
                 case OP_MODULO:
                     if (right == 0) {
                         fprintf(stderr, "Error: Modulo by zero\n");
                         exit(EXIT_FAILURE);
                     }
-                    return (double)((long long)left % (long long)right);
+                    result = (double)((long long)left % (long long)right);
+                    break;
                 case OP_POWER:
                     if (left == 0 && right == 0) {
                         fprintf(stderr, "Error: 0 to the power of 0 is undefined\n");
                         exit(EXIT_FAILURE);
                     }
-                    return pow(left, right);
+                    result = pow(left, right);
+                    break;
                 case OP_AND:
-                    return (long long) left & (long long) right;
+                    result = (long long) left & (long long) right;
+                    break;
                 case OP_OR:
-                    return (long long) left | (long long) right;
+                    result = (long long) left | (long long) right;
+                    break;
                 case OP_XOR:
-                    return (long long) left ^ (long long) right;
+                    result = (long long) left ^ (long long) right;
+                    break;
                 case OP_LESS:
-                    return left < right;
+                    result = left < right;
+                    break;
                 case OP_GREATER:
-                    return left > right;
+                    result = left > right;
+                    break;
                 case OP_EQUAL:
-                    return left == right;
+                    result = left == right;
+                    break;
                 case OP_NOT_EQUAL:
-                    return left != right;
+                    result = left != right;
+                    break;
                 case OP_LESS_EQUAL:
-                    return left <= right;
+                    result = left <= right;
+                    break;
                 case OP_GREATER_EQUAL:
-                    return left >= right;
+                    result = left >= right;
+                    break;
                 default:
-                    return 0;
+                    result = 0;
+                    break;
             }
+
+            return result;
         }
+
         case NODE_FUNC_CALL: {
-            execute_func_call(&node->data.func_call, scope);
-            
-            const Variable *return_val = get_variable(variable_map, "__FUNCTION_NUM_RET_VAL");
-            if (return_val && return_val->type == VAR_NUM) {
-                return return_val->value.num_val;
+            execute_func_call(&node->data.func_call, scope, ret_ctx);
+            if (ret_ctx->is_return && ret_ctx->type == RET_NUM) {
+                return ret_ctx->value.num_val;
             }
-            return 0;
+            return 0.0;
         }
         default:
             return 0;
     }
 }
 
-static void execute_var_decl(const VarDeclNode *node, struct hashmap *scope) {
+static void execute_var_decl(const VarDeclNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
     if (node->init_expr->type == NODE_EXPR_LITERAL) {
         if (node->type == VAR_NUM || node->type == -1) {
             const double num_val = node->init_expr->data.num_literal.num_val;
@@ -120,25 +153,19 @@ static void execute_var_decl(const VarDeclNode *node, struct hashmap *scope) {
                 .type = VAR_STR,
                 .value = { .str_val = str_val }
             });
-        } else if (node->type == VAR_NIL) {
-            hashmap_set(scope, &(Variable) {
-                .name = node->name,
-                .type = VAR_NIL,
-                .value = { .nil_val = NULL }
-            });
         }
-    } else if (node->init_expr->type == NODE_EXPR_BINARY || 
+    } else if (node->init_expr->type == NODE_EXPR_BINARY ||
                node->init_expr->type == NODE_EXPR_VARIABLE ||
                node->init_expr->type == NODE_FUNC_CALL) {
         if (node->type == VAR_NUM || node->type == -1) {
-            const double num_val = evaluate_expression(node->init_expr, scope);
+            const double num_val = evaluate_expression(node->init_expr, scope, ret_ctx);
             hashmap_set(scope, &(Variable) {
                 .name = node->name,
                 .type = VAR_NUM,
                 .value = { .num_val = num_val }
             });
         } else if (node->type == VAR_STR) {
-            char *str_val = get_string_value(node->init_expr, scope);
+            char *str_val = get_string_value(node->init_expr, scope, ret_ctx);
             hashmap_set(scope, &(Variable) {
                 .name = node->name,
                 .type = VAR_STR,
@@ -148,9 +175,8 @@ static void execute_var_decl(const VarDeclNode *node, struct hashmap *scope) {
     }
 }
 
-char *get_string_value(const ASTNode *node, struct hashmap *scope) {
+char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
     char buffer[1024];
-
     switch (node->type) {
         case NODE_EXPR_LITERAL: {
             if (node->data.str_literal.str_val) {
@@ -171,81 +197,94 @@ char *get_string_value(const ASTNode *node, struct hashmap *scope) {
             return strdup("<undefined>");
         }
         case NODE_FUNC_CALL: {
-            execute_func_call(&node->data.func_call, scope);
-            
-            const Variable *str_val = get_variable(variable_map, "__FUNCTION_STR_RET_VAL");
-            if (str_val && str_val->type == VAR_STR) {
-                return strdup(str_val->value.str_val);
+            ReturnContext local_ret_ctx = { .is_return = 0, .type = RET_NONE };
+            execute_func_call(&node->data.func_call, scope, &local_ret_ctx);
+            if (local_ret_ctx.is_return) {
+                if (local_ret_ctx.type == RET_STR) {
+                    return strdup(local_ret_ctx.value.str_val);
+                }
+                if (local_ret_ctx.type == RET_NUM) {
+                    snprintf(buffer, sizeof(buffer), "%g", local_ret_ctx.value.num_val);
+                    return strdup(buffer);
+                }
             }
-            
-            const Variable *num_val = get_variable(variable_map, "__FUNCTION_NUM_RET_VAL");
-            if (num_val && num_val->type == VAR_NUM) {
-                snprintf(buffer, sizeof(buffer), "%g", num_val->value.num_val);
-                return strdup(buffer);
-            }
-            
             return strdup("<no return value>");
         }
-        default:
-            const double ret = evaluate_expression(node, scope);
+        default: {
+            const double ret = evaluate_expression(node, scope, ret_ctx);
             snprintf(buffer, sizeof(buffer), "%g", ret);
             return strdup(buffer);
+        }
     }
 }
 
-static void execute_print(const PrintNode *node, struct hashmap *scope) {
+void execute_print(const PrintNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
     char *result = strdup("");
+    if (!result) {
+        fprintf(stderr, "Error: Memory allocation failed in print.\n");
+        return;
+    }
 
     for (int i = 0; i < node->expr_count; i++) {
-        char *part = get_string_value(node->expr_list[i], scope);
-        const size_t new_len = strlen(result) + strlen(part) + 1;
-        char *new_result = safe_malloc(new_len);
+        char *part = get_string_value(node->expr_list[i], scope, ret_ctx);
+        if (!part) {
+            fprintf(stderr, "Error: Failed to get string value for print argument %d.\n", i + 1);
+            continue;
+        }
 
-        strncpy(new_result, result, new_len);
-        new_result[new_len - 1] = '\0';
-        strncat(new_result, part, new_len - strlen(new_result) - 1);
+        const size_t current_len = strlen(result);
+        const size_t part_len = strlen(part);
+        char *new_result = safe_realloc(result, current_len + part_len + 1);
 
-        free(result);
+        if (!new_result) {
+            fprintf(stderr, "Error: Memory reallocation failed during print concatenation.\n");
+            free(result);
+            free(part);
+            return;
+        }
+        result = new_result;
+        strcpy(result + current_len, part);
         free(part);
-        result = new_result;\
     }
 
     printf("%s\n", result);
     free(result);
 }
 
-void execute(const ASTNode *node, struct hashmap *scope) {
+void execute(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
+    if (ret_ctx->is_return) return;
+
     switch (node->type) {
         case NODE_VAR_DECL:
-            execute_var_decl(&node->data.var_decl, scope);
-            break;
+            execute_var_decl(&node->data.var_decl, scope, ret_ctx);
+        break;
         case NODE_PRINT:
-            execute_print(&node->data.print, scope);
-            break;
+            execute_print(&node->data.print, scope, ret_ctx);
+        break;
         case NODE_BLOCK:
-            execute_block(&node->data.block, scope);
-            break;
+            execute_block(&node->data.block, scope, ret_ctx);
+        break;
         case NODE_EXPR_POSTFIX:
             execute_postfix(&node->data.postfix_expr, scope);
-            break;
+        break;
         case NODE_IF:
-            execute_if(&node->data.if_stmt, scope);
-            break;
+            execute_if(&node->data.if_stmt, scope, ret_ctx);
+        break;
         case NODE_WHILE:
-            execute_while(&node->data.while_stmt, scope);
-            break;
+            execute_while(&node->data.while_stmt, scope, ret_ctx);
+        break;
         case NODE_FUNC_DECL:
             execute_func_decl(&node->data.func_decl);
-            break;
+        break;
         case NODE_FUNC_CALL:
-            execute_func_call(&node->data.func_call, scope);
-            break;
+            execute_func_call(&node->data.func_call, scope, ret_ctx);
+        break;
         case NODE_RETURN:
-            execute_return(&node->data.return_stmt, scope);
-            break;
+            execute_return(&node->data.return_stmt, scope, ret_ctx);
+        break;
         default:
             fprintf(stderr, "Unknown node type: %d\n", node->type);
-            break;
+        break;
     }
 }
 
@@ -320,12 +359,12 @@ void execute_postfix(const PostfixExprNode *node, struct hashmap *scope) {
     }
 }
 
-void execute_if(const IfNode *if_node, struct hashmap *scope) {
+void execute_if(const IfNode *if_node, struct hashmap *scope, ReturnContext *ret_ctx) {
     struct hashmap *if_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
         variable_hash, variable_compare, NULL, NULL);
 
     if (evaluate_condition(if_node->condition, scope)) {
-        execute(if_node->body, if_scope);
+        execute(if_node->body, if_scope, ret_ctx);
         return;
     }
 
@@ -334,7 +373,7 @@ void execute_if(const IfNode *if_node, struct hashmap *scope) {
         if_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
             variable_hash, variable_compare, NULL, NULL);
         if (evaluate_condition(elif_node->data.if_stmt.condition, scope)) {
-            execute(elif_node->data.if_stmt.body, if_scope);
+            execute(elif_node->data.if_stmt.body, if_scope, ret_ctx);
             hashmap_free(if_scope);
             return;
         }
@@ -343,66 +382,94 @@ void execute_if(const IfNode *if_node, struct hashmap *scope) {
     if_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
             variable_hash, variable_compare, NULL, NULL);
     if (if_node->else_body) {
-        execute(if_node->else_body, if_scope);
+        execute(if_node->else_body, if_scope, ret_ctx);
     }
 
     hashmap_free(if_scope);
 }
 
-void execute_while(const WhileNode *while_node, struct hashmap *scope) {
+void execute_while(const WhileNode *while_node, struct hashmap *scope, ReturnContext *ret_ctx) {
     struct hashmap *while_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
         variable_hash, variable_compare, NULL, NULL);
 
     while (evaluate_condition(while_node->condition, scope)) {
-        execute(while_node->body, while_scope);
+        execute(while_node->body, while_scope, ret_ctx);
     }
 
     hashmap_free(while_scope);
 }
 
 void execute_func_decl(const FuncDeclNode *func_decl) {
-    hashmap_set(function_map, &(Function) {
-        .name = func_decl->name,
-        .type = func_decl->type,
-        .param_count = func_decl->param_count,
-        .parameters = func_decl->parameters,
-        .body = func_decl->body
-    });
+    Function *func = malloc(sizeof(Function));
+    if (!func) {
+        fprintf(stderr, "Memory allocation failed for function %s\n", func_decl->name);
+        exit(EXIT_FAILURE);
+    }
+    // Make a persistent copy of the function name.
+    func->name = strdup(func_decl->name);
+    if (!func->name) {
+        fprintf(stderr, "Memory allocation failed for function name %s\n", func_decl->name);
+        exit(EXIT_FAILURE);
+    }
+    func->param_count = func_decl->param_count;
+    func->parameters = func_decl->parameters;
+    func->body = func_decl->body;
+    hashmap_set(function_map, func);
 }
 
-void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope) {
-    const Function *function = hashmap_get(function_map, &(Function) {
-        .name = func_call->name
-    });
+double execute_function_body(const ASTNode *body, struct hashmap *scope) {
+    struct {
+        jmp_buf buf;
+        double ret_val;
+    } local_buf;
 
+    ReturnContext local_ctx = {0};
+    local_ctx.jmp = &local_buf.buf;
+    local_ctx.ret_ptr = &local_buf.ret_val;
+
+    ReturnContextNode node;
+    node.ctx = &local_ctx;
+    node.prev = current_return_ctx;
+    current_return_ctx = &node;
+
+    if (setjmp(local_buf.buf) == 0) {
+        execute(body, scope, &local_ctx);
+        current_return_ctx = node.prev;
+        return 0.0;
+    }
+    const double ret = local_buf.ret_val;
+    current_return_ctx = node.prev;
+    return ret;
+}
+
+void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, ReturnContext *caller_ret_ctx) {
+    const Function *function = hashmap_get(function_map, &(Function){ .name = func_call->name });
     if (!function) {
         fprintf(stderr, "Undefined function: %s\n", func_call->name);
         exit(EXIT_FAILURE);
     }
-
     if (func_call->arg_count != function->param_count) {
         fprintf(stderr, "Function %s expects %d arguments, but got %d\n",
-            func_call->name, function->param_count, func_call->arg_count);
+                func_call->name, function->param_count, func_call->arg_count);
         exit(EXIT_FAILURE);
     }
 
     struct hashmap *function_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
-        variable_hash, variable_compare, NULL, NULL);
-
+                                                  variable_hash, variable_compare, NULL, NULL);
     for (int i = 0; i < func_call->arg_count; i++) {
         const Parameter *param = &function->parameters[i];
         const ASTNode *arg = func_call->arguments[i];
-
+        ReturnContext arg_ctx = {0, RET_NONE, {0}, NULL, NULL};
         if (param->type[0] == 'n') {
-            const double value = evaluate_expression(arg, scope);
-            hashmap_set(function_scope, &(Variable) {
+            double value = evaluate_expression(arg, scope, &arg_ctx);
+            hashmap_set(function_scope, &(Variable){
                 .name = param->name,
                 .type = VAR_NUM,
                 .value = { .num_val = value }
             });
         } else if (param->type[0] == 's') {
-            char *value = get_string_value(arg, scope);
-            hashmap_set(function_scope, &(Variable) {
+            char *value = get_string_value(arg, scope, &arg_ctx);
+            hashmap_set(function_scope, &(Variable){
                 .name = param->name,
                 .type = VAR_STR,
                 .value = { .str_val = value }
@@ -410,66 +477,31 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope) {
         }
     }
 
-    execute(function->body, function_scope);
+    const double func_ret = execute_function_body(function->body, function_scope);
+
+    caller_ret_ctx->is_return = 1;
+    caller_ret_ctx->type = RET_NUM;
+    caller_ret_ctx->value.num_val = func_ret;
+
     hashmap_free(function_scope);
 }
 
-void execute_return(const ReturnNode *node, struct hashmap *scope) {
-    if (node->expr->type == NODE_EXPR_LITERAL) {
-        if (node->expr->data.str_literal.str_val) {
-            hashmap_set(variable_map, &(Variable) {
-                .name = "__FUNCTION_STR_RET_VAL",
-                .type = VAR_STR,
-                .value = { .str_val = strdup(node->expr->data.str_literal.str_val) }
-            });
-        } else {
-            hashmap_set(variable_map, &(Variable) {
-                .name = "__FUNCTION_NUM_RET_VAL",
-                .type = VAR_NUM,
-                .value = { .num_val = node->expr->data.num_literal.num_val }
-            });
-        }
-    } else if (node->expr->type == NODE_EXPR_BINARY || 
-               node->expr->type == NODE_EXPR_VARIABLE || 
-               node->expr->type == NODE_FUNC_CALL)
-    {
-        if (node->expr->type == NODE_EXPR_VARIABLE) {
-            const Variable *var = get_variable(scope, node->expr->data.variable.name);
-            if (var && var->type == VAR_STR) {
-                hashmap_set(variable_map, &(Variable) {
-                    .name = "__FUNCTION_STR_RET_VAL",
-                    .type = VAR_STR,
-                    .value = { .str_val = strdup(var->value.str_val) }
-                });
-                goto set_return_flag;
-            }
-        }
-        
-        if (node->expr->type == NODE_FUNC_CALL) {
-            execute_func_call(&node->expr->data.func_call, scope);
-            const Variable *str_ret = get_variable(variable_map, "__FUNCTION_STR_RET_VAL");
-            if (str_ret && str_ret->type == VAR_STR) {
-                hashmap_set(variable_map, &(Variable) {
-                    .name = "__FUNCTION_STR_RET_VAL",
-                    .type = VAR_STR,
-                    .value = { .str_val = strdup(str_ret->value.str_val) }
-                });
-                goto set_return_flag;
-            }
-        }
 
-        const double num_val = evaluate_expression(node->expr, scope);
-        hashmap_set(variable_map, &(Variable) {
-            .name = "__FUNCTION_NUM_RET_VAL",
-            .type = VAR_NUM,
-            .value = { .num_val = num_val }
-        });
+
+
+void execute_return(const ReturnNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
+    double ret_val = 0.0;
+    if (node->expr) {
+        ReturnContext temp = {0, RET_NONE, {0}, NULL, NULL};
+        ret_val = evaluate_expression(node->expr, scope, &temp);
     }
-
-set_return_flag:
-    hashmap_set(variable_map, &(Variable) {
-        .name = "__FUNCTION_RETURN_FLAG",
-        .type = VAR_NUM,
-        .value = { .num_val = 1 }
-    });
+    if (ret_ctx->ret_ptr) {
+        *(ret_ctx->ret_ptr) = ret_val;
+    }
+    if (current_return_ctx && current_return_ctx->ctx && current_return_ctx->ctx->jmp) {
+        longjmp(*(current_return_ctx->ctx->jmp), 1);
+    }
+    ret_ctx->is_return = 1;
+    ret_ctx->type = RET_NUM;
+    ret_ctx->value.num_val = ret_val;
 }
