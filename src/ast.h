@@ -1,8 +1,10 @@
 #ifndef AST_H
 #define AST_H
+#include "variables.h"
 
 typedef enum {
     NODE_VAR_DECL,
+    NODE_LIST_DECL,
     NODE_PRINT,
     NODE_FUNC_DECL,
     NODE_FUNC_CALL,
@@ -13,6 +15,7 @@ typedef enum {
     NODE_WHILE,
     NODE_BLOCK,
     NODE_EXPR_LITERAL,
+    NODE_LIST_LITERAL,
     NODE_EXPR_VARIABLE,
     NODE_EXPR_BINARY,
     NODE_EXPR_POSTFIX
@@ -117,14 +120,28 @@ typedef struct {
     ASTNode *expr;
 } ReturnNode;
 
+typedef struct {
+    VarType element_type; // Type of elements in the literal (num or str)
+    ASTNode **elements;   // Array of expression nodes for each element
+    int element_count;
+} ListLiteralNode;
+
+typedef struct {
+    char *name;           // Name of the list variable
+    VarType element_type; // Type of elements (VAR_NUM or VAR_STR)
+    ASTNode *init_expr;   // Optional initializer (should be NODE_LIST_LITERAL or NULL)
+} ListDeclNode;
+
 struct ASTNode {
     NodeType type;
     union {
         VarDeclNode var_decl;
+        ListDeclNode list_decl;
         PrintNode print;
         BlockNode block;
         NumLiteralNode num_literal;
         StrLiteralNode str_literal;
+        ListLiteralNode list_literal;
         VariableNode variable;
         IfNode if_stmt;
         WhileNode while_stmt;

@@ -5,15 +5,36 @@
 
 #include "hashmap.h"
 
+struct ListNode;
+
 typedef enum {
     VAR_NUM,
     VAR_STR,
-    VAR_NIL,
+    VAR_LIST
 } VarType;
 
-typedef  struct {
-    double num_val;
-    char *str_val;
+typedef struct {
+    VarType type; // Store the type of the element (VAR_NUM or VAR_STR)
+    union {
+        double num_val;
+        char *str_val;
+    } value;
+} ListElement;
+
+typedef struct ListNode {
+    ListElement element;      // The actual element data
+    struct ListNode *next; // Pointer to the next node
+} ListNode;
+
+typedef struct {
+    union {
+        double num_val;
+        char *str_val;
+        struct {
+            VarType element_type; // Store the type of elements in the list (VAR_NUM or VAR_STR)
+            ListNode *head; // Pointer to the head of the list
+        } list_val;
+    };
 } VariableValue;
 
 typedef struct {
@@ -29,5 +50,13 @@ int variable_compare(const void *a, const void *b, void *udata);
 bool variable_iter(const void *item, void *udata);
 
 uint64_t variable_hash(const void *item, uint64_t seed0, uint64_t seed1);
+
+char *trim_double(double value);
+
+ListNode *create_list_node(ListElement element);
+
+void free_list(ListNode *head);
+
+char *list_to_string(const ListNode *head, VarType element_type);
 
 #endif

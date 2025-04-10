@@ -175,6 +175,93 @@ static void execute_var_decl(const VarDeclNode *node, struct hashmap *scope, Ret
     }
 }
 
+void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
+    ListNode *head = NULL; // Head of the linked list
+    ListNode *current = NULL; // Pointer to the last node added
+
+    // Check if there's an initializer (a list literal)
+    if (node->init_expr && node->init_expr->type == NODE_LIST_LITERAL) {
+        const ListLiteralNode *literal = &node->init_expr->data.list_literal;
+
+        // Ensure literal type matches declaration type
+        if (literal->element_type != node->element_type) {
+            fprintf(stderr, "Error: List literal type mismatch for variable '%s'. Expected %d, got %d.\n",
+                    node->name, node->element_type, literal->element_type);
+            // Cleanup might be needed if some nodes were already created
+            exit(EXIT_FAILURE);
+        }
+
+        // Iterate through the literal elements and build the linked list
+        for (int i = 0; i < literal->element_count; ++i) {
+            ListElement element;
+            element.type = node->element_type; // Should match literal->element_type
+
+            // Evaluate the expression for the current element
+            if (element.type == VAR_NUM) {
+                element.value.num_val = evaluate_expression(literal->elements[i], scope, ret_ctx);
+                 // Check ret_ctx for errors from evaluate_expression?
+            } else if (element.type == VAR_STR) {
+                 // get_string_value allocates memory, list nodes need to own this
+                element.value.str_val = get_string_value(literal->elements[i], scope, ret_ctx);
+                if (!element.value.str_val) {
+                     fprintf(stderr, "Error: Failed to evaluate string element %d for list '%s'.\n", i, node->name);
+                     // Cleanup previously created nodes and strings
+                     free_list(head);
+                     exit(EXIT_FAILURE);
+                 }
+            } else {
+                // Should not happen based on parser validation
+                 fprintf(stderr, "Internal Error: Invalid element type %d in list literal for '%s'.\n", element.type, node->name);
+                 free_list(head);
+                 exit(EXIT_FAILURE);
+            }
+
+            // Create a new list node
+            ListNode *new_node = create_list_node(element); // Need to implement create_list_node
+             if (!new_node) {
+                  fprintf(stderr, "Error: Failed to allocate memory for list node for '%s'.\n", node->name);
+                  free_list(head); // Free already created part of the list
+                  // Also free the string if just allocated by get_string_value
+                  if (element.type == VAR_STR) free(element.value.str_val);
+                  exit(EXIT_FAILURE);
+             }
+
+
+            // Append the new node to the list
+            if (head == NULL) {
+                head = new_node;
+                current = head;
+            } else {
+                current->next = new_node;
+                current = new_node;
+            }
+        }
+    } // else: No initializer, head remains NULL (empty list)
+
+    // Create the variable structure
+    const Variable new_list_var = {
+        .name = strdup(node->name),
+        .type = VAR_LIST,
+        .value = { .list_val = { .element_type = node->element_type, .head = head } }
+    };
+     if (!new_list_var.name) {
+         fprintf(stderr, "Error: Failed to allocate memory for list variable name '%s'.\n", node->name);
+         free_list(head);
+         exit(EXIT_FAILURE);
+     }
+
+    hashmap_set(scope, &new_list_var);
+
+    // Check for out-of-memory from hashmap_set?
+    if (hashmap_oom(scope ? scope : variable_map)) {
+         fprintf(stderr, "Error: Out of memory while storing list variable '%s'.\n", node->name);
+         free(new_list_var.name);
+         free_list(head);
+         exit(EXIT_FAILURE);
+     }
+}
+
+
 char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
     char buffer[1024];
     switch (node->type) {
@@ -191,8 +278,13 @@ char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext
                 if (variable->type == VAR_STR) {
                     return strdup(variable->value.str_val);
                 }
-                snprintf(buffer, sizeof(buffer), "%g", variable->value.num_val);
-                return strdup(buffer);
+                if (variable->type == VAR_NUM) {
+                    snprintf(buffer, sizeof(buffer), "%g", variable->value.num_val);
+                    return strdup(buffer);
+                }
+                if (variable->type == VAR_LIST) {
+                    return strdup(list_to_string(variable->value.list_val.head, variable->value.list_val.element_type));
+                }
             }
             return strdup("<undefined>");
         }
@@ -257,34 +349,37 @@ void execute(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx)
     switch (node->type) {
         case NODE_VAR_DECL:
             execute_var_decl(&node->data.var_decl, scope, ret_ctx);
-        break;
+            break;
+        case NODE_LIST_DECL:
+            execute_list_decl(&node->data.list_decl, scope, ret_ctx);
+            break;
         case NODE_PRINT:
             execute_print(&node->data.print, scope, ret_ctx);
-        break;
+            break;
         case NODE_BLOCK:
             execute_block(&node->data.block, scope, ret_ctx);
-        break;
+            break;
         case NODE_EXPR_POSTFIX:
             execute_postfix(&node->data.postfix_expr, scope);
-        break;
+            break;
         case NODE_IF:
             execute_if(&node->data.if_stmt, scope, ret_ctx);
-        break;
+            break;
         case NODE_WHILE:
             execute_while(&node->data.while_stmt, scope, ret_ctx);
-        break;
+            break;
         case NODE_FUNC_DECL:
             execute_func_decl(&node->data.func_decl);
-        break;
+            break;
         case NODE_FUNC_CALL:
             execute_func_call(&node->data.func_call, scope, ret_ctx);
-        break;
+            break;
         case NODE_RETURN:
             execute_return(&node->data.return_stmt, scope, ret_ctx);
-        break;
+            break;
         default:
             fprintf(stderr, "Unknown node type: %d\n", node->type);
-        break;
+            break;
     }
 }
 

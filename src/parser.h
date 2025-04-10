@@ -37,4 +37,8 @@ ASTNode *parse_function_call(Parser *parser);
 
 ASTNode *parse_return(Parser *parser);
 
+ASTNode *parse_list_declaration(Parser *parser);
+
+ASTNode *parse_list_literal(Parser *parser, VarType expected_element_type);
+
 #endif

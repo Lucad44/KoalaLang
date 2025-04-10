@@ -39,6 +39,7 @@ Token next_token(Lexer *lexer) {
         TokenType type = TOKEN_IDENTIFIER;
         if (strcmp(lexeme, "num") == 0) type = TOKEN_KEYWORD_NUM;
         else if (strcmp(lexeme, "str") == 0) type = TOKEN_KEYWORD_STR;
+        else if (strcmp(lexeme, "list") == 0) type = TOKEN_KEYWORD_LIST;
         else if (strcmp(lexeme, "nil") == 0) type = TOKEN_KEYWORD_NIL;
         else if (strcmp(lexeme, "var") == 0) type = TOKEN_KEYWORD_VAR;
         else if (strcmp(lexeme, "if") == 0) type = TOKEN_KEYWORD_IF;
@@ -53,7 +54,7 @@ Token next_token(Lexer *lexer) {
         return (Token) {type, lexeme, 0, NULL};
     }
 
-    if (isdigit(current) || current == '.') {
+    if (isdigit(current) || (current == '.' && isdigit(lexer->source[lexer->current_pos + 1]))) { // Improved number parsing
         char *end;
         const double num = strtod(&lexer->source[lexer->current_pos], &end);
         lexer->current_pos = end - lexer->source;
@@ -85,10 +86,10 @@ Token next_token(Lexer *lexer) {
         case '=':
             if (lexer->source[lexer->current_pos + 1] == '=') {
                 lexer->current_pos += 2;
-                return (Token) {TOKEN_OPERATOR_EQUAL, NULL, 0, NULL};
+                return (Token) {TOKEN_OPERATOR_EQUAL, NULL, 0, NULL}; // Keep for comparison ==
             }
             lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_EQUAL, NULL, 0, NULL};
+            return (Token) {TOKEN_OPERATOR_EQUAL, NULL, 0, NULL}; // Keep for assignment =
         case '<':
             if (lexer->source[lexer->current_pos + 1] == '=') {
                 lexer->current_pos += 2;
@@ -158,6 +159,12 @@ Token next_token(Lexer *lexer) {
         case '}':
             lexer->current_pos++;
             return (Token) {TOKEN_RBRACE, NULL, 0, NULL};
+        case '[': // Added left bracket tokenization
+            lexer->current_pos++;
+            return (Token) {TOKEN_LBRACKET, NULL, 0, NULL};
+        case ']': // Added right bracket tokenization
+            lexer->current_pos++;
+            return (Token) {TOKEN_RBRACKET, NULL, 0, NULL};
         case ';':
             lexer->current_pos++;
             return (Token) {TOKEN_SEMICOLON, NULL, 0, NULL};

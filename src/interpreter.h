@@ -55,4 +55,6 @@ void execute_return(const ReturnNode *node, struct hashmap *scope, ReturnContext
 
 char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
 
+void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
+
 #endif //INTERPRETER_H

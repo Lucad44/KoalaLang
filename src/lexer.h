@@ -4,6 +4,7 @@
 typedef enum {
     TOKEN_KEYWORD_NUM,
     TOKEN_KEYWORD_STR,
+    TOKEN_KEYWORD_LIST,
     TOKEN_KEYWORD_VAR,
     TOKEN_KEYWORD_NIL,
     TOKEN_KEYWORD_IF,
@@ -39,6 +40,8 @@ typedef enum {
     TOKEN_SEMICOLON,
     TOKEN_LPAREN,
     TOKEN_RPAREN,
+    TOKEN_LBRACKET,
+    TOKEN_RBRACKET,
     TOKEN_LBRACE,
     TOKEN_RBRACE,
     TOKEN_COMMA,
@@ -52,6 +55,7 @@ typedef struct {
     char *lexeme;
     double num_value;
     char *str_value;
+    struct ListNode *list_value;
 } Token;
 
 typedef struct {

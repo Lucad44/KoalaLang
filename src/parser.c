@@ -617,6 +617,9 @@ ASTNode *parse_program(Parser *parser) {
             case TOKEN_KEYWORD_VAR:
                 stmt = parse_declaration(parser);
                 break;
+            case TOKEN_KEYWORD_LIST:
+                stmt = parse_list_declaration(parser);
+                break;
             case TOKEN_KEYWORD_PRINT:
                 stmt = parse_print(parser);
                 break;
@@ -654,4 +657,127 @@ ASTNode *parse_program(Parser *parser) {
     block->data.block.statements = statements;
     block->data.block.stmt_count = count;
     return block;
+}
+
+ASTNode *parse_list_literal(Parser *parser, VarType expected_element_type) {
+    if (parser->current_token.type != TOKEN_LBRACKET) {
+        // This function should only be called when '[' is expected
+        fprintf(stderr, "Internal Parser Error: Expected '[' for list literal.\n");
+        exit(EXIT_FAILURE);
+    }
+    advance(parser); // Consume '['
+
+    ASTNode **elements = NULL;
+    int element_count = 0;
+
+    while (parser->current_token.type != TOKEN_RBRACKET) {
+        ASTNode *element_expr = parse_expression(parser);
+
+        // Basic type checking at parse time (can be enhanced in interpreter)
+        if (expected_element_type == VAR_NUM && element_expr->type != NODE_EXPR_LITERAL /* && check if literal is num */ && element_expr->type != NODE_EXPR_VARIABLE && element_expr->type != NODE_EXPR_BINARY) {
+             fprintf(stderr, "Error: Expected numeric literal or expression for num list element, got node type %d.\n", element_expr->type);
+             // Cleanup needed
+             exit(EXIT_FAILURE);
+        } else if (expected_element_type == VAR_STR && element_expr->type != NODE_EXPR_LITERAL /* && check if literal is str */ && element_expr->type != NODE_EXPR_VARIABLE ) { // Allow string variables too
+             fprintf(stderr, "Error: Expected string literal or variable for str list element, got node type %d.\n", element_expr->type);
+              // Cleanup needed
+             exit(EXIT_FAILURE);
+        }
+
+
+        elements = safe_realloc(elements, (element_count + 1) * sizeof(ASTNode *));
+        elements[element_count++] = element_expr;
+
+        if (parser->current_token.type == TOKEN_RBRACKET) {
+            break; // End of list
+        }
+
+        if (parser->current_token.type != TOKEN_COMMA) {
+            fprintf(stderr, "Expected ',' or ']' in list literal, got %d\n", parser->current_token.type);
+            // Cleanup needed: free elements array and individual elements
+             for(int i = 0; i < element_count; ++i) free_ast(elements[i]);
+             free(elements);
+            exit(EXIT_FAILURE);
+        }
+        advance(parser); // Consume ','
+    }
+
+    if (parser->current_token.type != TOKEN_RBRACKET) {
+         fprintf(stderr, "Expected ']' to close list literal, got %d\n", parser->current_token.type);
+         // Cleanup needed
+         exit(EXIT_FAILURE);
+    }
+    advance(parser); // Consume ']'
+
+    ASTNode *list_node = safe_malloc(sizeof(ASTNode));
+    list_node->type = NODE_LIST_LITERAL;
+    list_node->data.list_literal.element_type = expected_element_type;
+    list_node->data.list_literal.elements = elements;
+    list_node->data.list_literal.element_count = element_count;
+
+    return list_node;
+}
+
+ASTNode *parse_list_declaration(Parser *parser) {
+    advance(parser); // Consume 'list' keyword
+
+    if (parser->current_token.type != TOKEN_LBRACKET) {
+        fprintf(stderr, "Expected '[' after 'list' keyword\n");
+        exit(EXIT_FAILURE);
+    }
+    advance(parser); // Consume '['
+
+    VarType element_type;
+    if (parser->current_token.type == TOKEN_KEYWORD_NUM) {
+        element_type = VAR_NUM;
+    } else if (parser->current_token.type == TOKEN_KEYWORD_STR) {
+        element_type = VAR_STR;
+    } else {
+        fprintf(stderr, "Expected 'num' or 'str' inside list type specifier '[ ]'\n");
+        exit(EXIT_FAILURE);
+    }
+    advance(parser); // Consume 'num' or 'str'
+
+    if (parser->current_token.type != TOKEN_RBRACKET) {
+        fprintf(stderr, "Expected ']' after list element type\n");
+        exit(EXIT_FAILURE);
+    }
+    advance(parser); // Consume ']'
+
+    if (parser->current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "Expected identifier (list name) after list type specifier\n");
+        exit(EXIT_FAILURE);
+    }
+    char *name = strdup(parser->current_token.lexeme);
+    advance(parser); // Consume identifier
+
+    ASTNode *init_expr = NULL;
+    if (parser->current_token.type == TOKEN_OPERATOR_EQUAL) {
+        advance(parser); // Consume '='
+        // Expect a list literal here
+        if (parser->current_token.type == TOKEN_LBRACKET) {
+             init_expr = parse_list_literal(parser, element_type);
+        } else {
+            fprintf(stderr, "Expected list literal '[' after '=' for list initialization\n");
+            free(name);
+            exit(EXIT_FAILURE);
+        }
+    }
+    // If no '=', init_expr remains NULL (empty list)
+
+    if (parser->current_token.type != TOKEN_SEMICOLON) {
+        fprintf(stderr, "Expected ';' after list declaration\n");
+        free(name);
+        free_ast(init_expr); // Free list literal AST if parsed
+        exit(EXIT_FAILURE);
+    }
+    advance(parser); // Consume ';'
+
+    ASTNode *node = safe_malloc(sizeof(ASTNode));
+    node->type = NODE_LIST_DECL;
+    node->data.list_decl.name = name;
+    node->data.list_decl.element_type = element_type;
+    node->data.list_decl.init_expr = init_expr; // This will be NULL or point to a NODE_LIST_LITERAL
+
+    return node;
 }
