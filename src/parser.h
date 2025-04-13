@@ -27,8 +27,6 @@ ASTNode *parse_while(Parser *parser);
 
 ASTNode *parse_program(Parser *parser);
 
-ASTNode *parse_expression_statement(Parser *parser);
-
 ASTNode *parse_postfix(Parser *parser, ASTNode *left);
 
 ASTNode *parse_function_declaration(Parser *parser);
@@ -40,5 +38,7 @@ ASTNode *parse_return(Parser *parser);
 ASTNode *parse_list_declaration(Parser *parser);
 
 ASTNode *parse_list_literal(Parser *parser, VarType expected_element_type);
+
+ASTNode *parse_expression_statement(Parser *parser);
 
 #endif

@@ -57,4 +57,6 @@ char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext
 
 void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
 
+void execute_assignment(const AssignmentNode *node, struct hashmap *scope);
+
 #endif //INTERPRETER_H

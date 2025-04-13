@@ -17,8 +17,11 @@ typedef enum {
     NODE_EXPR_LITERAL,
     NODE_LIST_LITERAL,
     NODE_EXPR_VARIABLE,
+    NODE_EXPR_UNARY,
     NODE_EXPR_BINARY,
-    NODE_EXPR_POSTFIX
+    NODE_EXPR_POSTFIX,
+    NODE_LIST_ACCESS,
+    NODE_ASSIGNMENT
 } NodeType;
 
 typedef enum {
@@ -44,7 +47,17 @@ typedef enum {
     OP_DEC
 } PostfixOperator;
 
+typedef enum {
+    OP_NEGATE,
+    OP_NOT
+} UnaryOperator;
+
 typedef struct ASTNode ASTNode;
+
+typedef struct {
+    UnaryOperator op;
+    ASTNode *operand;
+} UnaryExprNode;
 
 typedef struct {
     BinaryOperator op;
@@ -121,16 +134,27 @@ typedef struct {
 } ReturnNode;
 
 typedef struct {
-    VarType element_type; // Type of elements in the literal (num or str)
-    ASTNode **elements;   // Array of expression nodes for each element
+    VarType element_type;
+    ASTNode **elements;
     int element_count;
 } ListLiteralNode;
 
 typedef struct {
-    char *name;           // Name of the list variable
-    VarType element_type; // Type of elements (VAR_NUM or VAR_STR)
-    ASTNode *init_expr;   // Optional initializer (should be NODE_LIST_LITERAL or NULL)
+    char *name;
+    VarType element_type;
+    ASTNode *init_expr;
 } ListDeclNode;
+
+typedef struct {
+    char *list_name;
+    ASTNode *index_expr;
+} ListAccessNode;
+
+typedef struct {
+    char *target_name;
+    ASTNode *index_expr;
+    ASTNode *value_expr;
+} AssignmentNode;
 
 struct ASTNode {
     NodeType type;
@@ -145,11 +169,14 @@ struct ASTNode {
         VariableNode variable;
         IfNode if_stmt;
         WhileNode while_stmt;
+        UnaryExprNode unary_expr;
         BinaryExprNode binary_expr;
         PostfixExprNode postfix_expr;
         FuncDeclNode func_decl;
         FuncCallNode func_call;
         ReturnNode return_stmt;
+        ListAccessNode list_access;
+        AssignmentNode assignment;
     } data;
 };
 

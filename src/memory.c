@@ -40,19 +40,19 @@ void free_ast(void *node) {
     switch (ast_node->type) {
         case NODE_VAR_DECL:
             free(ast_node->data.var_decl.name);
-            free_ast(ast_node->data.var_decl.init_expr);
+        free_ast(ast_node->data.var_decl.init_expr);
             break;
         case NODE_PRINT:
             for (int i = 0; i < ast_node->data.print.expr_count; i++) {
                 free_ast(ast_node->data.print.expr_list[i]);
             }
-            free(ast_node->data.print.expr_list);
+        free(ast_node->data.print.expr_list);
             break;
         case NODE_BLOCK:
             for (int i = 0; i < ast_node->data.block.stmt_count; i++) {
                 free_ast(ast_node->data.block.statements[i]);
             }
-            free(ast_node->data.block.statements);
+        free(ast_node->data.block.statements);
             break;
         case NODE_EXPR_LITERAL:
             if (ast_node->data.str_literal.str_val) {
@@ -61,6 +61,22 @@ void free_ast(void *node) {
             break;
         case NODE_EXPR_VARIABLE:
             free(ast_node->data.variable.name);
+            break;
+        case NODE_LIST_ACCESS:
+            free(ast_node->data.list_access.list_name);
+            free_ast(ast_node->data.list_access.index_expr); // Recursively free the index expression
+            break;
+        case NODE_EXPR_UNARY:
+            free_ast(ast_node->data.unary_expr.operand);
+            break;
+        case NODE_ASSIGNMENT:
+            free(ast_node->data.assignment.target_name);
+            // Free index expression only if it exists (list assignment)
+            if (ast_node->data.assignment.index_expr != NULL) {
+                free_ast(ast_node->data.assignment.index_expr);
+            }
+            // Free the value expression
+            free_ast(ast_node->data.assignment.value_expr);
             break;
         default:
             break;

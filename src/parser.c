@@ -18,13 +18,24 @@ void advance(Parser *parser) {
 }
 
 ASTNode *parse_primary(Parser *parser) {
+    if (parser->current_token.type == TOKEN_OPERATOR_MINUS) {
+        advance(parser); // Consume '-'
+        ASTNode *operand = parse_primary(parser);
+
+        // Create a unary node wrapping the operand
+        ASTNode *unary_node = safe_malloc(sizeof(ASTNode));
+        unary_node->type = NODE_EXPR_UNARY;
+        unary_node->data.unary_expr.op = OP_NEGATE; // Defined in ast.h
+        unary_node->data.unary_expr.operand = operand;
+        return unary_node; // Return the new unary node
+    }
     ASTNode *node = safe_malloc(sizeof(ASTNode));
 
     switch (parser->current_token.type) {
         case TOKEN_LPAREN: {
             advance(parser);
             ASTNode *expr = parse_expression(parser);
-            
+
             if (parser->current_token.type != TOKEN_RPAREN) {
                 fprintf(stderr, "Expected closing parenthesis ')'\n");
                 exit(EXIT_FAILURE);
@@ -83,8 +94,32 @@ ASTNode *parse_primary(Parser *parser) {
         case TOKEN_IDENTIFIER:
             node->type = NODE_EXPR_VARIABLE;
             node->data.variable.name = strdup(parser->current_token.lexeme);
+            char* potential_list_name = node->data.variable.name; // Store name temporarily
             advance(parser);
-            break;
+
+            // ----> Add this check <----
+            if (parser->current_token.type == TOKEN_LBRACKET) {
+                advance(parser); // Consume '['
+
+                ASTNode *index_expr = parse_expression(parser); // Parse the index
+
+                if (parser->current_token.type != TOKEN_RBRACKET) {
+                    fprintf(stderr, "Error: Expected ']' after list index expression.\n");
+                    // Consider freeing allocated resources like potential_list_name, index_expr
+                    exit(EXIT_FAILURE);
+                }
+                advance(parser); // Consume ']'
+
+                // Change the node type and fill ListAccessNode data
+                node->type = NODE_LIST_ACCESS;
+                node->data.list_access.list_name = potential_list_name; // Use the stored name
+                node->data.list_access.index_expr = index_expr;
+                // Note: We keep the allocated 'node' but change its type and data.
+            }
+            // ----> End of added check <----
+            // else: it was just a normal variable access, node is already set up.
+
+            break; // End of TOKEN_IDENTIFIER case
         default:
             fprintf(stderr, "Unexpected token in expression: %d\n", parser->current_token.type);
             exit(EXIT_FAILURE);
@@ -101,22 +136,22 @@ ASTNode *parse_binary_expr(Parser *parser, ASTNode *left, const int min_prec) {
         {TOKEN_OPERATOR_OR, OP_OR, 1},           // |
         {TOKEN_OPERATOR_XOR, OP_XOR, 2},         // ^
         {TOKEN_OPERATOR_AND, OP_AND, 3},         // &
-        
-        {TOKEN_OPERATOR_EQUAL, OP_EQUAL, 7},     // == != 
+
+        {TOKEN_OPERATOR_EQUAL, OP_EQUAL, 7},     // == !=
         {TOKEN_OPERATOR_NOT_EQUAL, OP_NOT_EQUAL, 7},
-        
+
         {TOKEN_OPERATOR_LESS, OP_LESS, 8},       // < > <= >=
         {TOKEN_OPERATOR_GREATER, OP_GREATER, 8},
         {TOKEN_OPERATOR_LESS_EQUAL, OP_LESS_EQUAL, 8},
         {TOKEN_OPERATOR_GREATER_EQUAL, OP_GREATER_EQUAL, 8},
-        
+
         {TOKEN_OPERATOR_PLUS, OP_PLUS, 10},      // + -
         {TOKEN_OPERATOR_MINUS, OP_MINUS, 10},
-        
+
         {TOKEN_OPERATOR_MULTIPLY, OP_MULTIPLY, 11}, // * / %
         {TOKEN_OPERATOR_DIVIDE, OP_DIVIDE, 11},
         {TOKEN_OPERATOR_MODULO, OP_MODULO, 11},
-        
+
         {TOKEN_OPERATOR_POWER, OP_POWER, 12}    // **
     };
 
@@ -321,32 +356,32 @@ ASTNode *parse_if(Parser *parser) {
 
     while (parser->current_token.type == TOKEN_KEYWORD_ELIF) {
         advance(parser);
-        
+
         if (parser->current_token.type != TOKEN_LPAREN) {
             fprintf(stderr, "Expected '(' after elif\n");
             exit(EXIT_FAILURE);
         }
         advance(parser);
-        
+
         ASTNode *elif_condition = parse_condition(parser);
-        
+
         if (parser->current_token.type != TOKEN_RPAREN) {
             fprintf(stderr, "Expected ')' after elif condition\n");
             exit(EXIT_FAILURE);
         }
         advance(parser);
-        
+
         ASTNode *elif_body = parse_braced_block(parser);
-        
+
         node->data.if_stmt.elif_count++;
         node->data.if_stmt.elif_nodes = safe_realloc(node->data.if_stmt.elif_nodes,
             node->data.if_stmt.elif_count * sizeof(ASTNode*));
-        
+
         ASTNode *elif_node = safe_malloc(sizeof(ASTNode));
         elif_node->type = NODE_ELIF;
         elif_node->data.if_stmt.condition = elif_condition;
         elif_node->data.if_stmt.body = elif_body;
-        
+
         node->data.if_stmt.elif_nodes[node->data.if_stmt.elif_count - 1] = elif_node;
     }
 
@@ -458,18 +493,6 @@ ASTNode *parse_braced_block(Parser *parser) {
     return block;
 }
 
-ASTNode *parse_expression_statement(Parser *parser) {
-    ASTNode *expr = parse_expression(parser);
-
-    if (parser->current_token.type != TOKEN_SEMICOLON) {
-        fprintf(stderr, "Expected ';' after expression\n");
-        exit(EXIT_FAILURE);
-    }
-    advance(parser);
-
-    return expr;
-}
-
 ASTNode *parse_function_declaration(Parser *parser) {
     advance(parser);
 
@@ -491,7 +514,7 @@ ASTNode *parse_function_declaration(Parser *parser) {
     int param_count = 0;
 
     while (parser->current_token.type != TOKEN_RPAREN) {
-        if (parser->current_token.type != TOKEN_KEYWORD_NUM && 
+        if (parser->current_token.type != TOKEN_KEYWORD_NUM &&
             parser->current_token.type != TOKEN_KEYWORD_STR)
         {
             fprintf(stderr, "Expected parameter type (num or str)\n");
@@ -780,4 +803,104 @@ ASTNode *parse_list_declaration(Parser *parser) {
     node->data.list_decl.init_expr = init_expr; // This will be NULL or point to a NODE_LIST_LITERAL
 
     return node;
+}
+
+ASTNode *parse_expression_statement(Parser *parser) {
+     if (parser->current_token.type != TOKEN_IDENTIFIER) {
+        // This function should only be called when the current token is an identifier.
+        fprintf(stderr, "Internal Parser Error: Expected identifier.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    char *target_name = strdup(parser->current_token.lexeme);
+    if (!target_name) { // Check allocation
+         fprintf(stderr, "Error: Memory allocation failed for identifier name.\n");
+         exit(EXIT_FAILURE);
+    }
+    advance(parser); // Consume identifier
+
+    ASTNode *node = NULL; // Initialize node pointer
+
+    // Now, check what follows the identifier
+    switch (parser->current_token.type) {
+        case TOKEN_LBRACKET: { // Potential List Assignment: identifier[ ... ] = ...
+            advance(parser); // Consume '['
+            ASTNode *index_expr = parse_expression(parser); // Parse index
+
+            if (parser->current_token.type != TOKEN_RBRACKET) {
+                fprintf(stderr, "Error: Expected ']' after list index in assignment target.\n");
+                free(target_name);
+                free_ast(index_expr);
+                exit(EXIT_FAILURE);
+            }
+            advance(parser); // Consume ']'
+
+            if (parser->current_token.type != TOKEN_OPERATOR_EQUAL) {
+                 fprintf(stderr, "Error: Expected '=' after list index target '[]' in assignment.\n");
+                 free(target_name);
+                 free_ast(index_expr);
+                 exit(EXIT_FAILURE);
+            }
+            advance(parser); // Consume '='
+
+            ASTNode *value_expr = parse_expression(parser); // Parse value
+
+            // Create the list assignment node
+            node = safe_malloc(sizeof(ASTNode));
+            node->type = NODE_ASSIGNMENT;
+            node->data.assignment.target_name = target_name;
+            node->data.assignment.index_expr = index_expr;
+            node->data.assignment.value_expr = value_expr;
+            break; // Break from switch
+        }
+
+        case TOKEN_OPERATOR_EQUAL: { // Variable Assignment: identifier = ...
+            advance(parser); // Consume '='
+            ASTNode *value_expr = parse_expression(parser); // Parse value
+
+            // Create the variable assignment node
+            node = safe_malloc(sizeof(ASTNode));
+            node->type = NODE_ASSIGNMENT;
+            node->data.assignment.target_name = target_name;
+            node->data.assignment.index_expr = NULL; // Mark as non-list assignment
+            node->data.assignment.value_expr = value_expr;
+            break; // Break from switch
+        }
+
+        case TOKEN_OPERATOR_PLUS_PLUS: // Postfix Increment Statement: identifier++
+        case TOKEN_OPERATOR_MINUS_MINUS: { // Postfix Decrement Statement: identifier--
+            PostfixOperator op = (parser->current_token.type == TOKEN_OPERATOR_PLUS_PLUS) ? OP_INC : OP_DEC;
+            advance(parser); // Consume '++' or '--'
+
+            // Create the postfix expression node (used as a statement here)
+            node = safe_malloc(sizeof(ASTNode));
+            node->type = NODE_EXPR_POSTFIX;
+            node->data.postfix_expr.op = op;
+            // Important: postfix_expr stores the name directly
+            node->data.postfix_expr.var_name = target_name; // Pass ownership of target_name
+            // free(target_name); // No need to free, ownership transferred
+
+            break; // Break from switch
+        }
+
+        default:
+            // If none of the above follow the identifier, it's an unsupported statement start
+            // (e.g., just "myVar;" or "myList[0];" which aren't statements in this language)
+            fprintf(stderr, "Error: Unexpected token '%s' after identifier '%s' in statement.\n",
+                    parser->current_token.lexeme ? parser->current_token.lexeme : "(unknown)",
+                    target_name);
+            free(target_name);
+            exit(EXIT_FAILURE);
+    }
+
+    // All valid paths (assignment or postfix) should end with a semicolon
+    if (parser->current_token.type != TOKEN_SEMICOLON) {
+        fprintf(stderr, "Error: Expected ';' after statement.\n");
+        free_ast(node); // Free the partially created node
+        // Note: target_name is either freed above or ownership passed to 'node'
+        exit(EXIT_FAILURE);
+    }
+    advance(parser); // Consume ';'
+
+    return node; // Return the fully parsed assignment or postfix node
 }
