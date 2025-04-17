@@ -1,5 +1,6 @@
 #ifndef AST_H
 #define AST_H
+
 #include "variables.h"
 
 typedef enum {

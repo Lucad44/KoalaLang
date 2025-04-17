@@ -14,7 +14,7 @@ typedef enum {
 } VarType;
 
 typedef struct {
-    VarType type; // Store the type of the element (VAR_NUM or VAR_STR)
+    VarType type;
     union {
         double num_val;
         char *str_val;
@@ -22,8 +22,8 @@ typedef struct {
 } ListElement;
 
 typedef struct ListNode {
-    ListElement element;      // The actual element data
-    struct ListNode *next; // Pointer to the next node
+    ListElement element;
+    struct ListNode *next;
 } ListNode;
 
 typedef struct {
@@ -31,8 +31,8 @@ typedef struct {
         double num_val;
         char *str_val;
         struct {
-            VarType element_type; // Store the type of elements in the list (VAR_NUM or VAR_STR)
-            ListNode *head; // Pointer to the head of the list
+            VarType element_type;
+            ListNode *head;
         } list_val;
     };
 } VariableValue;

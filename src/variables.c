@@ -53,14 +53,11 @@ char *trim_double(const double value) {
 }
 
 ListNode *create_list_node(const ListElement element) {
-    // Use safe_malloc for node allocation
-    struct ListNode *node = safe_malloc(sizeof(struct ListNode));
+    ListNode *node = safe_malloc(sizeof(struct ListNode));
     if (!node) {
         perror("Failed to allocate memory for list node");
-        return NULL; // Allocation failure handled by safe_malloc usually exits, but check anyway
+        return NULL;
     }
-    // Copy the element data. For strings, this copies the pointer.
-    // The caller (execute_list_decl) must ensure the string was allocated.
     node->element = element;
     node->next = NULL;
     return node;
@@ -70,25 +67,21 @@ void free_list(ListNode *head) {
     ListNode *current = head;
 
     while (current != NULL) {
-        ListNode *next_node = current->next; // Store next pointer before freeing current
-
-        // If the element is a string, free the string data it owns
+        ListNode *next_node = current->next;
         if (current->element.type == VAR_STR && current->element.value.str_val != NULL) {
             free(current->element.value.str_val);
             current->element.value.str_val = NULL; // Good practice
         }
-
-        // Free the list node itself
         free(current);
 
-        current = next_node; // Move to the next node
+        current = next_node;
     }
 }
 
 char *list_to_string(const ListNode *head, const VarType element_type) {
     char buffer[4096] = {0};
     const ListNode *current = head;
-    strncat(buffer, "[", 1);
+    strcat(buffer, "[");
     while (current != NULL) {
         if (element_type == VAR_NUM) {
             const char *trimmed = trim_double(current->element.value.num_val);
@@ -97,17 +90,17 @@ char *list_to_string(const ListNode *head, const VarType element_type) {
             strncat(buffer, current->element.value.str_val, strlen(current->element.value.str_val));
         }
         if (current->next != NULL) {
-            strncat(buffer, ", ", 2);
+            strcat(buffer, ", ");
         }
         current = current->next;
     }
-    strncat(buffer, "]\n", 2);
+    strcat(buffer, "]\n");
     return strdup(buffer);
 }
 
 ListNode *copy_list(const ListNode *head, const VarType element_type) {
     if (!head) {
-        return NULL; // Return NULL for an empty original list
+        return NULL;
     }
 
     ListNode *new_head = NULL;
@@ -118,7 +111,6 @@ ListNode *copy_list(const ListNode *head, const VarType element_type) {
         ListElement new_element;
         new_element.type = element_type;
 
-        // Copy the value - need deep copy for strings
         if (element_type == VAR_NUM) {
             new_element.value.num_val = current->element.value.num_val;
         } else if (element_type == VAR_STR) {
@@ -126,11 +118,11 @@ ListNode *copy_list(const ListNode *head, const VarType element_type) {
                 new_element.value.str_val = strdup(current->element.value.str_val);
                 if (!new_element.value.str_val) {
                     fprintf(stderr, "Error: Failed to duplicate string during list copy.\n");
-                    free_list(new_head); // Free the partially created new list
-                    return NULL; // Indicate error
+                    free_list(new_head);
+                    return NULL;
                 }
             } else {
-                new_element.value.str_val = NULL; // Copy NULL pointer
+                new_element.value.str_val = NULL;
             }
         } else {
             fprintf(stderr, "Internal Error: Unsupported element type %d during list copy.\n", element_type);
@@ -138,29 +130,26 @@ ListNode *copy_list(const ListNode *head, const VarType element_type) {
              return NULL;
         }
 
-        // Create the new node
         ListNode *new_node = create_list_node(new_element);
         if (!new_node) {
             fprintf(stderr, "Error: Failed to allocate node during list copy.\n");
-            // If string was duplicated, free it before freeing the list
              if (element_type == VAR_STR && new_element.value.str_val != NULL) {
                  free(new_element.value.str_val);
              }
-            free_list(new_head); // Free the partially created new list
-            return NULL; // Indicate error
+            free_list(new_head);
+            return NULL;
         }
 
-        // Append to the new list
         if (new_head == NULL) {
             new_head = new_node;
             new_tail = new_node;
-        } else {
+        } else if (new_tail != NULL) {
             new_tail->next = new_node;
             new_tail = new_node;
         }
 
-        current = current->next; // Move to the next node in the original list
+        current = current->next;
     }
 
-    return new_head; // Return the head of the newly created copy
+    return new_head;
 }

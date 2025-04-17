@@ -24,32 +24,24 @@ static void free_function_scope_lists(struct hashmap *scope) {
     if (!scope) return;
     size_t i = 0;
     void *item;
-    // Create a temporary list of list heads to free
     ListNode **heads_to_free = NULL;
     int count = 0;
 
     while (hashmap_iter(scope, &i, &item)) {
         const Variable *var = (Variable *)item;
         if (var->type == VAR_LIST && var->value.list_val.head != NULL) {
-            // Add head to our temporary list
             heads_to_free = safe_realloc(heads_to_free, (count + 1) * sizeof(ListNode*));
             heads_to_free[count++] = var->value.list_val.head;
-            // Important: Set the head in the variable to NULL *after* adding
-            // it to the list, so hashmap_free doesn't try to double-free.
-            // However, hashmap_free currently has NULL for elfree, so this isn't strictly needed now.
-            // var->value.list_val.head = NULL; // If hashmap had elfree, this would be crucial.
         } else if (var->type == VAR_STR && var->value.str_val != NULL) {
-            // Free string value allocated during argument passing
             free(var->value.str_val);
-            // var->value.str_val = NULL; // If hashmap had elfree
         }
     }
 
-    // Now free the collected list heads
     for (int j = 0; j < count; ++j) {
-        free_list(heads_to_free[j]);
+        if (heads_to_free != NULL)
+            free_list(heads_to_free[j]);
     }
-    free(heads_to_free); // Free the temporary list itself
+    free(heads_to_free);
 }
 
 Variable *get_variable(struct hashmap *scope, char *name) {
@@ -88,35 +80,20 @@ static double evaluate_expression(const ASTNode *node, struct hashmap *scope, Re
         }
         case NODE_EXPR_UNARY: {
             const UnaryExprNode *unary_node = &node->data.unary_expr;
-
-            // Recursively evaluate the operand
-            // Use a temporary context in case the operand itself involves returns/jumps
             ReturnContext operand_ctx = { .is_return = 0, .type = RET_NONE };
             double operand_value = evaluate_expression(unary_node->operand, scope, &operand_ctx);
-
-            // Handle potential early return from operand evaluation if necessary
-            // For simple negation, we usually just need the numeric result.
             if (operand_ctx.is_return) {
                 if (operand_ctx.type == RET_NUM) {
                     operand_value = operand_ctx.value.num_val;
-                    // Propagate the return status ONLY if your language design requires it here.
-                    // For simple expression evaluation, often you don't propagate here.
-                    // ret_ctx->is_return = 1;
-                    // ret_ctx->type = RET_NUM;
-                    // ret_ctx->value.num_val = -operand_value; // Apply op before propagating? Design choice.
-                    // return -operand_value; // Or just return the result
                 } else {
                     fprintf(stderr, "Error: Cannot apply unary minus to non-numeric return value.\n");
                     exit(EXIT_FAILURE);
                 }
             }
 
-            // Apply the unary operation
             switch (unary_node->op) {
                 case OP_NEGATE:
                     return -operand_value;
-                // case OP_NOT: // Example for later boolean not
-                //    return !operand_value; // Requires careful handling of truthiness
                 default:
                     fprintf(stderr, "Error: Unknown unary operator %d.\n", unary_node->op);
                 exit(EXIT_FAILURE);
@@ -198,7 +175,8 @@ static double evaluate_expression(const ASTNode *node, struct hashmap *scope, Re
 
         case NODE_FUNC_CALL: {
             execute_func_call(&node->data.func_call, scope, ret_ctx);
-            if (ret_ctx->is_return && ret_ctx->type == RET_NUM) {
+            if (ret_ctx->is_return && ret_ctx->type == RET_NUM) { // temporary return solution
+                // TODO: add more return types
                 return ret_ctx->value.num_val;
             }
             return 0.0;
@@ -206,8 +184,6 @@ static double evaluate_expression(const ASTNode *node, struct hashmap *scope, Re
         case NODE_LIST_ACCESS: {
             const ListAccessNode *access_node = &node->data.list_access;
             Variable *list_var = get_variable(scope, access_node->list_name);
-
-            // Check if the variable exists and is a list (keep existing checks)
             if (!list_var) {
                 fprintf(stderr, "Error: List variable '%s' not found.\n", access_node->list_name);
                 exit(EXIT_FAILURE);
@@ -216,59 +192,41 @@ static double evaluate_expression(const ASTNode *node, struct hashmap *scope, Re
                 fprintf(stderr, "Error: Variable '%s' is not a list.\n", access_node->list_name);
                 exit(EXIT_FAILURE);
             }
-
-            // ---> Add: Calculate list size <---
             int list_size = 0;
-            ListNode *counter_node = list_var->value.list_val.head;
+            const ListNode *counter_node = list_var->value.list_val.head;
             while (counter_node != NULL) {
                 list_size++;
                 counter_node = counter_node->next;
             }
-            // ---> End Add <---
-
-
-            // Evaluate the index expression (keep existing code)
             ReturnContext index_eval_ctx = { .is_return = 0, .type = RET_NONE };
-            double index_val_double = evaluate_expression(access_node->index_expr, scope, &index_eval_ctx);
-
-            // ---> Modify: Index validation and conversion <---
-            int index;
-            // Check if index is an integer first
+            const double index_val_double = evaluate_expression(access_node->index_expr, scope, &index_eval_ctx);
             if (index_val_double != floor(index_val_double)) {
                  fprintf(stderr, "Error: List index for '%s' must be an integer, got %f.\n",
                          access_node->list_name, index_val_double);
                  exit(EXIT_FAILURE);
             }
 
-            index = (int)index_val_double; // Cast to int
+            int index = (int) index_val_double;
 
-            // Handle negative index
             if (index < 0) {
-                index = list_size + index; // Convert to positive index from the end
+                index = list_size + index;
             }
 
-            // Bounds check (now unified for positive and converted negative indices)
             if (index < 0 || index >= list_size) {
                 fprintf(stderr, "Error: List index %d (calculated from %f) out of bounds for list '%s' of size %d.\n",
                         index, index_val_double, access_node->list_name, list_size);
                 exit(EXIT_FAILURE);
             }
-            // ---> End Modify <---
 
 
             // Traverse the list (use the final 'index' value)
-            ListNode *current = list_var->value.list_val.head;
+            const ListNode *current = list_var->value.list_val.head;
             int count = 0;
-            // The loop condition is correct as 'index' is now guaranteed non-negative
-            while (count < index) { // No need to check current != NULL here, bounds check covers it
+            while (count < index) {
                 current = current->next;
                 count++;
             }
 
-            // Node must exist due to bounds check unless list_size was 0 (handled by index >= list_size check)
-            // if (current == NULL) { ... } // This check is now redundant
-
-            // Return the value (keep existing logic, assuming numeric lists for this function)
             if (list_var->value.list_val.element_type == VAR_NUM) {
                  if (current->element.type == VAR_NUM) {
                     return current->element.value.num_val;
@@ -276,15 +234,13 @@ static double evaluate_expression(const ASTNode *node, struct hashmap *scope, Re
                      fprintf(stderr, "Internal Error: List '%s' element type mismatch at index %d.\n", access_node->list_name, index);
                      exit(EXIT_FAILURE);
                  }
-            } else if (list_var->value.list_val.element_type == VAR_STR) {
-                 fprintf(stderr, "Error: Accessing string list elements directly within numerical expressions is not yet supported.\n");
-                 exit(EXIT_FAILURE);
-            } else {
-                 fprintf(stderr, "Internal Error: Unknown list element type for '%s'.\n", access_node->list_name);
-                 exit(EXIT_FAILURE);
             }
-             // Dead code path due to exits above
-             // return 0.0;
+            if (list_var->value.list_val.element_type == VAR_STR) {
+                fprintf(stderr, "Error: Accessing string list elements directly within numerical expressions is not yet supported.\n");
+                exit(EXIT_FAILURE);
+            }
+            fprintf(stderr, "Internal Error: Unknown list element type for '%s'.\n", access_node->list_name);
+            exit(EXIT_FAILURE);
         }
         case NODE_EXPR_POSTFIX: {
             const PostfixExprNode *postfix_node = &node->data.postfix_expr;
@@ -292,33 +248,25 @@ static double evaluate_expression(const ASTNode *node, struct hashmap *scope, Re
 
             if (!variable) {
                 fprintf(stderr, "Error: Undefined variable '%s' in postfix operation.\n", postfix_node->var_name);
-                // Optionally set ret_ctx to an error state or exit
-                exit(EXIT_FAILURE); // Or handle error more gracefully
-                // return 0.0; // Or return a default value
+                exit(EXIT_FAILURE);
             }
 
             if (variable->type != VAR_NUM) {
                 fprintf(stderr, "Error: Cannot apply postfix operator to non-numeric variable '%s'.\n", postfix_node->var_name);
-                // Optionally set ret_ctx to an error state or exit
-                exit(EXIT_FAILURE); // Or handle error more gracefully
-                // return 0.0; // Or return a default value
+                exit(EXIT_FAILURE);
             }
 
-            // Store the original value *before* modification
-            double original_value = variable->value.num_val;
+            const double original_value = variable->value.num_val;
 
-            // Modify the variable's value based on the operator
             switch (postfix_node->op) {
                 case OP_INC:
                     variable->value.num_val++;
-                break;
+                    break;
                 case OP_DEC:
                     variable->value.num_val--;
-                break;
-                // No default needed as enum covers all cases
+                    break;
             }
 
-            // Return the original value
             return original_value;
         }
         default:
@@ -365,69 +313,55 @@ static void execute_var_decl(const VarDeclNode *node, struct hashmap *scope, Ret
 }
 
 void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
-    ListNode *head = NULL; // Head of the linked list
-    ListNode *current = NULL; // Pointer to the last node added
+    ListNode *head = NULL;
+    ListNode *current = NULL;
 
-    // Check if there's an initializer (a list literal)
     if (node->init_expr && node->init_expr->type == NODE_LIST_LITERAL) {
         const ListLiteralNode *literal = &node->init_expr->data.list_literal;
 
-        // Ensure literal type matches declaration type
         if (literal->element_type != node->element_type) {
             fprintf(stderr, "Error: List literal type mismatch for variable '%s'. Expected %d, got %d.\n",
                     node->name, node->element_type, literal->element_type);
-            // Cleanup might be needed if some nodes were already created
             exit(EXIT_FAILURE);
         }
 
-        // Iterate through the literal elements and build the linked list
         for (int i = 0; i < literal->element_count; ++i) {
             ListElement element;
-            element.type = node->element_type; // Should match literal->element_type
+            element.type = node->element_type;
 
-            // Evaluate the expression for the current element
             if (element.type == VAR_NUM) {
                 element.value.num_val = evaluate_expression(literal->elements[i], scope, ret_ctx);
-                 // Check ret_ctx for errors from evaluate_expression?
             } else if (element.type == VAR_STR) {
-                 // get_string_value allocates memory, list nodes need to own this
                 element.value.str_val = get_string_value(literal->elements[i], scope, ret_ctx);
                 if (!element.value.str_val) {
                      fprintf(stderr, "Error: Failed to evaluate string element %d for list '%s'.\n", i, node->name);
-                     // Cleanup previously created nodes and strings
                      free_list(head);
                      exit(EXIT_FAILURE);
                  }
             } else {
-                // Should not happen based on parser validation
                  fprintf(stderr, "Internal Error: Invalid element type %d in list literal for '%s'.\n", element.type, node->name);
                  free_list(head);
                  exit(EXIT_FAILURE);
             }
 
-            // Create a new list node
-            ListNode *new_node = create_list_node(element); // Need to implement create_list_node
+            ListNode *new_node = create_list_node(element);
              if (!new_node) {
                   fprintf(stderr, "Error: Failed to allocate memory for list node for '%s'.\n", node->name);
-                  free_list(head); // Free already created part of the list
-                  // Also free the string if just allocated by get_string_value
+                  free_list(head);
                   if (element.type == VAR_STR) free(element.value.str_val);
                   exit(EXIT_FAILURE);
              }
 
-
-            // Append the new node to the list
             if (head == NULL) {
                 head = new_node;
                 current = head;
-            } else {
+            } else if (current != NULL) {
                 current->next = new_node;
                 current = new_node;
             }
         }
-    } // else: No initializer, head remains NULL (empty list)
+    }
 
-    // Create the variable structure
     const Variable new_list_var = {
         .name = strdup(node->name),
         .type = VAR_LIST,
@@ -441,7 +375,6 @@ void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnCo
 
     hashmap_set(scope, &new_list_var);
 
-    // Check for out-of-memory from hashmap_set?
     if (hashmap_oom(scope ? scope : variable_map)) {
          fprintf(stderr, "Error: Out of memory while storing list variable '%s'.\n", node->name);
          free(new_list_var.name);
@@ -475,14 +408,12 @@ char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext
                     return strdup(list_to_string(variable->value.list_val.head, variable->value.list_val.element_type));
                 }
             }
-            return strdup("<undefined>");
+            fprintf(stderr, "Undefined variable: %s\n", node->data.variable.name);
+            exit(EXIT_FAILURE);
         }
         case NODE_EXPR_UNARY: {
-            // Evaluate the expression first
-            ReturnContext temp_ctx = {0}; // Use a clean context
+            ReturnContext temp_ctx = {0};
             const double value = evaluate_expression(node, scope, &temp_ctx);
-            // Handle potential return from evaluation if necessary (like above)
-            // Format the result
             snprintf(buffer, sizeof(buffer), "%g", value);
             return strdup(buffer);
         }
@@ -498,72 +429,58 @@ char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext
                     return strdup(buffer);
                 }
             }
-            return strdup("<no return value>");
+            fprintf(stderr, "Function call returned no value\n");
+            exit(EXIT_FAILURE);
         }
         case NODE_LIST_ACCESS: {
             const ListAccessNode *access_node = &node->data.list_access;
             Variable *list_var = get_variable(scope, access_node->list_name);
              if (!list_var || list_var->type != VAR_LIST) {
-                 return strdup("<list access error: not found or not a list>"); // More specific error
+                 fprintf(stderr, "Error: List variable '%s' not found or is not a list.\n", access_node->list_name);
+                 exit(EXIT_FAILURE);
              }
 
-             // ---> Add: Calculate list size <---
              int list_size = 0;
-             ListNode *counter_node = list_var->value.list_val.head;
+            const ListNode *counter_node = list_var->value.list_val.head;
              while (counter_node != NULL) {
                  list_size++;
                  counter_node = counter_node->next;
              }
-             // ---> End Add <---
 
-
-             // Evaluate index (keep existing code)
              ReturnContext index_eval_ctx = { .is_return = 0, .type = RET_NONE };
-             double index_val_double = evaluate_expression(access_node->index_expr, scope, &index_eval_ctx);
-
-
-             // ---> Modify: Index validation and conversion <---
-             int index;
-             // Check if index is an integer first
+            const double index_val_double = evaluate_expression(access_node->index_expr, scope, &index_eval_ctx);
              if (index_val_double != floor(index_val_double)) {
-                  snprintf(buffer, sizeof(buffer), "<invalid index: non-integer %f>", index_val_double);
-                  return strdup(buffer);
+                  fprintf(stderr, "Error: List index must be an integer.\n");
+                 exit(EXIT_FAILURE);
              }
-             index = (int)index_val_double;
+             int index = (int) index_val_double;
 
-             // Handle negative index
              if (index < 0) {
-                 index = list_size + index; // Convert to positive index from the end
+                 index = list_size + index;
              }
 
-             // Bounds check
              if (index < 0 || index >= list_size) {
-                 snprintf(buffer, sizeof(buffer), "<index %d (from %f) out of bounds for size %d>", index, index_val_double, list_size);
-                 return strdup(buffer);
+                 fprintf(stderr, "Error: List index out of bounds.\n");
+                 exit(EXIT_FAILURE);
              }
-             // ---> End Modify <---
 
-
-             // Traverse the list (use the final 'index' value)
-             ListNode *current = list_var->value.list_val.head;
+            const ListNode *current = list_var->value.list_val.head;
              int count = 0;
              while (count < index) {
                  current = current->next;
                  count++;
              }
 
-             // if (current == NULL) { ... } // Redundant due to bounds check
-
-             // Convert element to string (keep existing logic)
              if (current->element.type == VAR_NUM) {
                  snprintf(buffer, sizeof(buffer), "%g", current->element.value.num_val);
                  return strdup(buffer);
-             } else if (current->element.type == VAR_STR) {
-                 return strdup(current->element.value.str_val ? current->element.value.str_val : "");
-             } else {
-                 return strdup("<unknown list element type>");
              }
-         }
+             if (current->element.type == VAR_STR) {
+                return strdup(current->element.value.str_val ? current->element.value.str_val : "");
+             }
+            fprintf(stderr, "Error: unknown list element type.\n");
+            exit(EXIT_FAILURE);
+        }
         default: {
             const double ret = evaluate_expression(node, scope, ret_ctx);
             snprintf(buffer, sizeof(buffer), "%g", ret);
@@ -817,40 +734,30 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
     struct hashmap *function_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
                                                   variable_hash, variable_compare,
                                                   NULL, NULL);
-     if (!function_scope) {
-         fprintf(stderr, "Failed to allocate scope for function %s\n", func_call->name);
-         exit(EXIT_FAILURE);
-     }
+    if (!function_scope) {
+        fprintf(stderr, "Failed to allocate scope for function %s\n", func_call->name);
+        exit(EXIT_FAILURE);
+    }
 
 
-    // Process arguments and populate function scope
     for (int i = 0; i < func_call->arg_count; i++) {
         const Parameter *param = &function->parameters[i];
         const ASTNode *arg_node = func_call->arguments[i];
-        ReturnContext arg_eval_ctx = {0, RET_NONE, {0}, NULL, NULL}; // Context for argument evaluation
+        ReturnContext arg_eval_ctx = {0, RET_NONE, {0}, NULL, NULL};
 
         if (param->is_list) {
-            // --- Handle List Parameter ---
             ListNode *list_to_pass_head = NULL;
-            VarType list_element_type = param->type; // Expected type
+            const VarType list_element_type = param->type;
 
-            // ---> MODIFICATION START <---
             if (arg_node->type == NODE_LIST_LITERAL) {
-                 // Argument is a list literal: evaluate it in the *caller's* scope
                  const ListLiteralNode *literal_node = &arg_node->data.list_literal;
                  ListNode *current_new_node = NULL;
 
-                // NOTE: Parser passed a placeholder type. Check compatibility now.
-                // Although, the literal itself doesn't strictly have a type until evaluated.
-
                  for (int j = 0; j < literal_node->element_count; ++j) {
                      ListElement element;
-                     element.type = list_element_type; // Assign expected type
-
-                     // Evaluate element expression in the CALLER'S scope (variable 'scope')
+                     element.type = list_element_type;
                      if (list_element_type == VAR_NUM) {
                          element.value.num_val = evaluate_expression(literal_node->elements[j], scope, &arg_eval_ctx);
-                         // Check arg_eval_ctx for errors/returns from evaluation if needed
                      } else if (list_element_type == VAR_STR) {
                          element.value.str_val = get_string_value(literal_node->elements[j], scope, &arg_eval_ctx);
                          if (!element.value.str_val) {
@@ -870,11 +777,9 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                          exit(EXIT_FAILURE);
                      }
 
-                     // Create the list node
                      ListNode *new_node = create_list_node(element);
                       if (!new_node) {
                            fprintf(stderr, "Error: Failed to allocate memory for list node from literal for function '%s'.\n", func_call->name);
-                           // Free potentially allocated string
                            if (list_element_type == VAR_STR && element.value.str_val) free(element.value.str_val);
                            free_list(list_to_pass_head);
                            free_function_scope_lists(function_scope);
@@ -887,15 +792,13 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                      if (list_to_pass_head == NULL) {
                          list_to_pass_head = new_node;
                          current_new_node = new_node;
-                     } else {
+                    } else if (current_new_node != NULL) {
                          current_new_node->next = new_node;
                          current_new_node = new_node;
                      }
                  }
-                 // list_to_pass_head now holds the evaluated list literal
 
             } else if (arg_node->type == NODE_EXPR_VARIABLE) {
-                 // Argument is a variable name (existing behavior)
                  char *list_arg_name = arg_node->data.variable.name;
                  Variable *list_var_caller = get_variable(scope, list_arg_name);
 
@@ -920,7 +823,6 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                       hashmap_free(function_scope);
                       exit(EXIT_FAILURE);
                  }
-                 // Copy the list from the caller's variable
                  list_to_pass_head = copy_list(list_var_caller->value.list_val.head, list_element_type);
                  if (!list_to_pass_head && list_var_caller->value.list_val.head != NULL) {
                        fprintf(stderr, "Error: Failed to copy list argument %d for function '%s'.\n", i + 1, func_call->name);
@@ -929,21 +831,16 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                        exit(EXIT_FAILURE);
                  }
             } else {
-                 // Argument is neither a list literal nor a variable
                  fprintf(stderr, "Error: Invalid argument type (%d) for list parameter '%s' in function '%s'. Expected list variable or literal.\n",
                          arg_node->type, param->name, func_call->name);
                  free_function_scope_lists(function_scope);
                  hashmap_free(function_scope);
                  exit(EXIT_FAILURE);
             }
-            // ---> MODIFICATION END <---
-
-
-            // Create variable in function scope using list_to_pass_head
             Variable function_param_var = {
-                .name = strdup(param->name), // Copy parameter name
+                .name = strdup(param->name),
                 .type = VAR_LIST,
-                .value = { .list_val = { .element_type = list_element_type, .head = list_to_pass_head } } // Use the created/copied list
+                .value = { .list_val = { .element_type = list_element_type, .head = list_to_pass_head } }
             };
             if (!function_param_var.name) {
                  fprintf(stderr, "Error: Failed to allocate memory for parameter name '%s'.\n", param->name);
@@ -964,44 +861,53 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
             }
 
         } else if (param->type == VAR_NUM) {
-            // --- Handle Num Parameter (existing behavior) ---
-            double value = evaluate_expression(arg_node, scope, &arg_eval_ctx);
-            // Handle potential return from arg evaluation if needed
+            const double value = evaluate_expression(arg_node, scope, &arg_eval_ctx);
              Variable function_param_var = {
                   .name = strdup(param->name),
                   .type = VAR_NUM,
                   .value = { .num_val = value }
-              };
-             if (!function_param_var.name) { /* ... OOM check ... */ free_function_scope_lists(function_scope); hashmap_free(function_scope); exit(EXIT_FAILURE); }
+             };
+             if (!function_param_var.name) {
+                 free_function_scope_lists(function_scope);
+                 hashmap_free(function_scope);
+                 exit(EXIT_FAILURE);
+             }
              hashmap_set(function_scope, &function_param_var);
-              if (hashmap_oom(function_scope)) { /* ... OOM check ... */ free(function_param_var.name); free_function_scope_lists(function_scope); hashmap_free(function_scope); exit(EXIT_FAILURE); }
+              if (hashmap_oom(function_scope)) {
+                  free(function_param_var.name);
+                  free_function_scope_lists(function_scope);
+                  hashmap_free(function_scope);
+                  exit(EXIT_FAILURE);
+              }
 
         } else if (param->type == VAR_STR) {
-            // --- Handle Str Parameter (existing behavior) ---
             char *value = get_string_value(arg_node, scope, &arg_eval_ctx);
-             // get_string_value already strdup's, so we own 'value'
              Variable function_param_var = {
-                  .name = strdup(param->name), // Need name for the parameter entry
+                  .name = strdup(param->name),
                   .type = VAR_STR,
-                  .value = { .str_val = value } // Pass ownership of 'value' string
-              };
-             if (!function_param_var.name) { free(value); /* ... OOM check ... */ free_function_scope_lists(function_scope); hashmap_free(function_scope); exit(EXIT_FAILURE); }
+                  .value = { .str_val = value }
+             };
+             if (!function_param_var.name) {
+                 free(value);
+                 free_function_scope_lists(function_scope); hashmap_free(function_scope); exit(EXIT_FAILURE);
+             }
              hashmap_set(function_scope, &function_param_var);
-              if (hashmap_oom(function_scope)) { free(value); free(function_param_var.name); /* ... OOM check ... */ free_function_scope_lists(function_scope); hashmap_free(function_scope); exit(EXIT_FAILURE); }
+              if (hashmap_oom(function_scope)) {
+                  free(value);
+                  free(function_param_var.name);
+                  free_function_scope_lists(function_scope);
+                  hashmap_free(function_scope);
+                  exit(EXIT_FAILURE);
+              }
         }
     }
 
-    // Execute function body with the populated scope
-    const double func_ret = execute_function_body(function->body, function_scope); // Adapt return handling if needed
+    const double func_ret = execute_function_body(function->body, function_scope);
 
-    // Set caller's return context
-    // TODO: Need proper handling for non-numeric return types from functions
     caller_ret_ctx->is_return = 1;
-    caller_ret_ctx->type = RET_NUM; // Assuming numeric return only for now
+    caller_ret_ctx->type = RET_NUM;
     caller_ret_ctx->value.num_val = func_ret;
-
-    // Cleanup Function Scope
-    free_function_scope_lists(function_scope); // This should now free lists created from literals as well
+    free_function_scope_lists(function_scope);
     hashmap_free(function_scope);
 }
 
@@ -1023,12 +929,9 @@ void execute_return(const ReturnNode *node, struct hashmap *scope, ReturnContext
 }
 
 void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
-    // Check if it's list or variable assignment based on index_expr
     if (node->index_expr != NULL) {
-        // === List Assignment ===
         Variable *list_var = get_variable(scope, node->target_name);
 
-        // Check if list variable exists and is a list
         if (!list_var) {
             fprintf(stderr, "Error: List variable '%s' not found for assignment.\n", node->target_name);
             exit(EXIT_FAILURE);
@@ -1038,18 +941,15 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
             exit(EXIT_FAILURE);
         }
 
-        // Calculate list size
         int list_size = 0;
-        ListNode *counter_node = list_var->value.list_val.head;
+        const ListNode *counter_node = list_var->value.list_val.head;
         while (counter_node != NULL) {
             list_size++;
             counter_node = counter_node->next;
         }
 
-        // Evaluate and validate index (using logic from list access)
         ReturnContext index_eval_ctx = {0};
-        double index_val_double = evaluate_expression(node->index_expr, scope, &index_eval_ctx);
-        // Handle potential return from index expression if necessary
+        const double index_val_double = evaluate_expression(node->index_expr, scope, &index_eval_ctx);
 
         if (index_val_double != floor(index_val_double)) {
             fprintf(stderr, "Error: List index for '%s' must be an integer, got %f.\n", node->target_name, index_val_double);
@@ -1057,7 +957,7 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
         }
         int index = (int)index_val_double;
         if (index < 0) {
-            index = list_size + index; // Handle negative index
+            index = list_size + index;
         }
         if (index < 0 || index >= list_size) {
             fprintf(stderr, "Error: List index %d (calculated from %f) out of bounds for list '%s' of size %d during assignment.\n",
@@ -1065,80 +965,62 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
             exit(EXIT_FAILURE);
         }
 
-        // Find the target list node
         ListNode *target_lnode = list_var->value.list_val.head;
         for (int i = 0; i < index; ++i) {
-            target_lnode = target_lnode->next; // Should not be NULL due to bounds check
+            target_lnode = target_lnode->next;
         }
 
-        // Evaluate the value expression and check type
-        ReturnContext value_eval_ctx = {0}; // Use clean context for value evaluation
+        ReturnContext value_eval_ctx = {0};
         if (list_var->value.list_val.element_type == VAR_NUM) {
-            double value_to_assign = evaluate_expression(node->value_expr, scope, &value_eval_ctx);
-            // Handle potential return from value expression if needed
-            if (target_lnode->element.type != VAR_NUM) { // Sanity check
+            const double value_to_assign = evaluate_expression(node->value_expr, scope, &value_eval_ctx);
+            if (target_lnode->element.type != VAR_NUM) {
                  fprintf(stderr, "Internal Error: List '%s' node type mismatch at index %d.\n", node->target_name, index);
                  exit(EXIT_FAILURE);
             }
             target_lnode->element.value.num_val = value_to_assign;
         } else if (list_var->value.list_val.element_type == VAR_STR) {
             char *value_to_assign_str = get_string_value(node->value_expr, scope, &value_eval_ctx);
-            // Handle potential return from value expression if needed
 
-            if (!value_to_assign_str) { // Check if get_string_value failed
+            if (!value_to_assign_str) {
                  fprintf(stderr, "Error: Failed to evaluate string value for assignment to list '%s' at index %d.\n", node->target_name, index);
-                 exit(EXIT_FAILURE); // Or handle error string from get_string_value if changed
+                 exit(EXIT_FAILURE);
             }
-             if (target_lnode->element.type != VAR_STR) { // Sanity check
+             if (target_lnode->element.type != VAR_STR) {
                   fprintf(stderr, "Internal Error: List '%s' node type mismatch at index %d.\n", node->target_name, index);
                   free(value_to_assign_str);
                   exit(EXIT_FAILURE);
              }
-            // Free the old string before assigning the new one
             if (target_lnode->element.value.str_val != NULL) {
                 free(target_lnode->element.value.str_val);
             }
-            target_lnode->element.value.str_val = value_to_assign_str; // Assign the newly allocated string
+            target_lnode->element.value.str_val = value_to_assign_str;
         } else {
              fprintf(stderr, "Internal Error: Assignment to list '%s' with unknown element type.\n", node->target_name);
              exit(EXIT_FAILURE);
         }
 
     } else {
-        // === Variable Assignment ===
         Variable *existing_var = get_variable(scope, node->target_name);
 
         if (!existing_var) {
             fprintf(stderr, "Error: Variable '%s' not declared before assignment.\n", node->target_name);
-             // If your language allows implicit declaration on assignment, change this.
             exit(EXIT_FAILURE);
         }
 
-        // Evaluate the value and check type against existing variable
         ReturnContext value_eval_ctx = {0};
         if (existing_var->type == VAR_NUM) {
-            double value_to_assign = evaluate_expression(node->value_expr, scope, &value_eval_ctx);
-            // Handle potential return
+            const double value_to_assign = evaluate_expression(node->value_expr, scope, &value_eval_ctx);
             existing_var->value.num_val = value_to_assign;
-            // Note: hashmap_set is not strictly needed if modifying in place, BUT if
-            // get_variable could return from a different scope (e.g., global),
-            // directly modifying might be wrong. Using hashmap_set ensures update
-            // in the correct scope (assuming 'scope' is the target scope).
-            // However, modifying in place is usually fine for simple local scopes. Let's modify in place.
-            // hashmap_set(scope, existing_var); // Re-set to update hashmap if needed by its design
         } else if (existing_var->type == VAR_STR) {
             char *value_to_assign_str = get_string_value(node->value_expr, scope, &value_eval_ctx);
-            // Handle potential return
              if (!value_to_assign_str) {
                   fprintf(stderr, "Error: Failed to evaluate string value for assignment to variable '%s'.\n", node->target_name);
                   exit(EXIT_FAILURE);
              }
-            // Free the old string in the variable before assigning the new one
             if (existing_var->value.str_val != NULL) {
                 free(existing_var->value.str_val);
             }
             existing_var->value.str_val = value_to_assign_str;
-            // hashmap_set(scope, existing_var); // See comment above
         } else if (existing_var->type == VAR_LIST) {
              fprintf(stderr, "Error: Cannot assign directly to a list variable '%s' using '='. Use list declaration or modify elements.\n", node->target_name);
              exit(EXIT_FAILURE);

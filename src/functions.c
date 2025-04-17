@@ -19,13 +19,19 @@ bool function_iter(const void *item, void *udata) {
     const Function *function = item;
     printf("\n%s(", function->name);
     for (int i = 0; i < function->param_count; i++) {
-        printf("%s %s, ", function->parameters[i].type, function->parameters[i].name);
+        if (function->parameters[i].type == VAR_NUM) {
+            printf("int %s, ", function->parameters[i].name);
+        } else if (function->parameters[i].type == VAR_STR) {
+            printf("str %s, ", function->parameters[i].name);
+        } else if (function->parameters[i].type == VAR_LIST) {
+            printf("list[] %s, ", function->parameters[i].name);
+        }
     }
     printf(")\n");
     return true;
 }
 
-uint64_t function_hash(const void *item, uint64_t seed0, uint64_t seed1) {
+uint64_t function_hash(const void *item, const uint64_t seed0, const uint64_t seed1) {
     const Function *function = item;
     return hashmap_sip(function->name, strlen(function->name), seed0, seed1);
 }

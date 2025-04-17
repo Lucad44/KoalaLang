@@ -29,10 +29,6 @@ typedef struct ReturnContextNode {
     struct ReturnContextNode *prev;
 } ReturnContextNode;
 
-
-
-
-
 Variable *get_variable(struct hashmap *scope, char *name);
 
 void execute(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
