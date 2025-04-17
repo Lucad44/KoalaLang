@@ -113,7 +113,8 @@ typedef struct {
 
 typedef struct {
     char *name;
-    char *type;
+    VarType type; // Represents element type for lists (VAR_NUM/VAR_STR), or VAR_NUM/VAR_STR for scalars
+    bool is_list; // Flag to indicate if it's a list parameter
 } Parameter;
 
 typedef struct {

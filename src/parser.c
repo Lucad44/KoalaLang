@@ -494,45 +494,84 @@ ASTNode *parse_braced_block(Parser *parser) {
 }
 
 ASTNode *parse_function_declaration(Parser *parser) {
-    advance(parser);
+    advance(parser); // Consume 'fun'
 
     if (parser->current_token.type != TOKEN_IDENTIFIER) {
         fprintf(stderr, "Expected function name\n");
         exit(EXIT_FAILURE);
     }
     char *func_name = strdup(parser->current_token.lexeme);
-    advance(parser);
-
+    advance(parser); // Consume function name
 
     if (parser->current_token.type != TOKEN_LPAREN) {
         fprintf(stderr, "Expected '(' after function name\n");
+        // free(func_name); // Good practice to free allocated memory on error
         exit(EXIT_FAILURE);
     }
-    advance(parser);
+    advance(parser); // Consume '('
 
     Parameter *parameters = NULL;
     int param_count = 0;
 
     while (parser->current_token.type != TOKEN_RPAREN) {
-        if (parser->current_token.type != TOKEN_KEYWORD_NUM &&
-            parser->current_token.type != TOKEN_KEYWORD_STR)
-        {
-            fprintf(stderr, "Expected parameter type (num or str)\n");
+        bool is_list_param = false;
+        VarType param_element_type = VAR_NUM; // Default, will be overwritten
+
+        // Check for 'list' keyword
+        if (parser->current_token.type == TOKEN_KEYWORD_LIST) {
+            is_list_param = true;
+            advance(parser); // Consume 'list'
+            if (parser->current_token.type != TOKEN_LBRACKET) {
+                fprintf(stderr, "Expected '[' after 'list' in parameter type\n");
+                // Cleanup memory
+                exit(EXIT_FAILURE);
+            }
+            advance(parser); // Consume '['
+
+            if (parser->current_token.type == TOKEN_KEYWORD_NUM) {
+                param_element_type = VAR_NUM;
+            } else if (parser->current_token.type == TOKEN_KEYWORD_STR) {
+                param_element_type = VAR_STR;
+            } else {
+                fprintf(stderr, "Expected 'num' or 'str' inside list parameter type '[ ]'\n");
+                // Cleanup memory
+                exit(EXIT_FAILURE);
+            }
+            advance(parser); // Consume 'num' or 'str'
+
+            if (parser->current_token.type != TOKEN_RBRACKET) {
+                fprintf(stderr, "Expected ']' after list parameter element type\n");
+                // Cleanup memory
+                exit(EXIT_FAILURE);
+            }
+            advance(parser); // Consume ']'
+
+        } else if (parser->current_token.type == TOKEN_KEYWORD_NUM) {
+            is_list_param = false;
+            param_element_type = VAR_NUM;
+            advance(parser); // Consume 'num'
+        } else if (parser->current_token.type == TOKEN_KEYWORD_STR) {
+            is_list_param = false;
+            param_element_type = VAR_STR;
+            advance(parser); // Consume 'str'
+        } else {
+            fprintf(stderr, "Expected parameter type (num, str, or list[type])\n");
+             // Cleanup memory
             exit(EXIT_FAILURE);
         }
-        char *param_type = strdup(parser->current_token.lexeme);
-        advance(parser);
 
         if (parser->current_token.type != TOKEN_IDENTIFIER) {
             fprintf(stderr, "Expected parameter name\n");
+            // Cleanup memory
             exit(EXIT_FAILURE);
         }
         char *param_name = strdup(parser->current_token.lexeme);
-        advance(parser);
+        advance(parser); // Consume parameter name
 
-        parameters = safe_realloc(parameters, (param_count + 1) * sizeof(*parameters));
+        parameters = safe_realloc(parameters, (param_count + 1) * sizeof(Parameter));
         parameters[param_count].name = param_name;
-        parameters[param_count].type = param_type;
+        parameters[param_count].type = param_element_type; // Store element type or scalar type
+        parameters[param_count].is_list = is_list_param;    // Store list flag
         param_count++;
 
         if (parser->current_token.type == TOKEN_RPAREN) {
@@ -540,18 +579,19 @@ ASTNode *parse_function_declaration(Parser *parser) {
         }
         if (parser->current_token.type != TOKEN_COMMA) {
             fprintf(stderr, "Expected ',' or ')' after parameter\n");
+             // Cleanup memory
             exit(EXIT_FAILURE);
         }
-        advance(parser);
+        advance(parser); // Consume ','
     }
-    advance(parser);
+    advance(parser); // Consume ')'
 
     ASTNode *body = parse_braced_block(parser);
 
     ASTNode *node = safe_malloc(sizeof(ASTNode));
     node->type = NODE_FUNC_DECL;
     node->data.func_decl.name = func_name;
-    node->data.func_decl.parameters = parameters;
+    node->data.func_decl.parameters = parameters; // parameters array is now correctly populated
     node->data.func_decl.param_count = param_count;
     node->data.func_decl.body = body;
 
@@ -559,26 +599,51 @@ ASTNode *parse_function_declaration(Parser *parser) {
 }
 
 ASTNode *parse_function_call(Parser *parser) {
-    advance(parser);
+    advance(parser); // Consume 'call' keyword (or function name if 'call' keyword is removed)
 
     if (parser->current_token.type != TOKEN_IDENTIFIER) {
         fprintf(stderr, "Expected function name after 'call'\n");
+        // Consider freeing resources if applicable
         exit(EXIT_FAILURE);
     }
     char *func_name = strdup(parser->current_token.lexeme);
-    advance(parser);
+    advance(parser); // Consume function name
 
     if (parser->current_token.type != TOKEN_LPAREN) {
-        fprintf(stderr, "Expected '(' after function name\n");
+        fprintf(stderr, "Expected '(' after function name '%s'\n", func_name);
+        free(func_name);
         exit(EXIT_FAILURE);
     }
-    advance(parser);
+    advance(parser); // Consume '('
 
     ASTNode **arguments = NULL;
     int arg_count = 0;
 
     while (parser->current_token.type != TOKEN_RPAREN) {
-        ASTNode *arg = parse_expression(parser);
+        ASTNode *arg = NULL;
+        // ---> MODIFICATION START <---
+        // Check if the argument starts with a list literal '['
+        if (parser->current_token.type == TOKEN_LBRACKET) {
+             // We don't know the expected element type here in the parser for a generic function call.
+             // We'll parse it as a generic list literal first.
+             // The type checking will happen during interpretation based on the function signature.
+             // We pass a placeholder type like VAR_NUM, the interpreter will check compatibility later.
+             // Or better, parse elements first and infer type, or add a generic List Literal Node type
+             // Let's use parse_list_literal but acknowledge the type isn't fully validated *here*.
+             // NOTE: A robust solution might require modifying parse_list_literal
+             // or adding a new parsing function that doesn't require a pre-defined type.
+             // For now, we'll parse assuming a type (e.g., VAR_NUM) and let the interpreter validate.
+             // This implies parse_list_literal might need to be more flexible or a new node introduced.
+             // Let's assume parse_list_literal handles expressions generically for now.
+             // We pass VAR_NUM as a placeholder; the interpreter MUST validate against the parameter.
+            arg = parse_list_literal(parser, VAR_NUM); // Pass a default/placeholder type
+            // Ensure parse_list_literal correctly parses expressions inside, not just literals
+        } else {
+            // Otherwise, parse it as a regular expression (variable, number, string, other expression)
+            arg = parse_expression(parser);
+        }
+        // ---> MODIFICATION END <---
+
 
         arguments = safe_realloc(arguments, (arg_count + 1) * sizeof(ASTNode *));
         arguments[arg_count++] = arg;
@@ -587,18 +652,29 @@ ASTNode *parse_function_call(Parser *parser) {
             break;
         }
         if (parser->current_token.type != TOKEN_COMMA) {
-            fprintf(stderr, "Expected ',' or ')' after argument\n");
+            fprintf(stderr, "Expected ',' or ')' after argument in function call '%s'\n", func_name);
+             // Cleanup arguments array and individual args
+            for (int i = 0; i < arg_count; ++i) free_ast(arguments[i]);
+            free(arguments);
+            free(func_name);
             exit(EXIT_FAILURE);
         }
-        advance(parser);
+        advance(parser); // Consume ','
     }
-    advance(parser);
+    advance(parser); // Consume ')'
 
+    // Check for semicolon if calls are statements (depends on language grammar)
+    // If function calls can be part of expressions, remove this check or adjust logic
     if (parser->current_token.type != TOKEN_SEMICOLON) {
-        fprintf(stderr, "Expected ';' after function call\n");
+        fprintf(stderr, "Expected ';' after function call statement '%s'\n", func_name);
+        // Cleanup
+        for (int i = 0; i < arg_count; ++i) free_ast(arguments[i]);
+        free(arguments);
+        free(func_name);
         exit(EXIT_FAILURE);
     }
-    advance(parser);
+    advance(parser); // Consume ';'
+
 
     ASTNode *node = safe_malloc(sizeof(ASTNode));
     node->type = NODE_FUNC_CALL;
@@ -608,6 +684,7 @@ ASTNode *parse_function_call(Parser *parser) {
 
     return node;
 }
+
 
 ASTNode *parse_return(Parser* parser) {
     advance(parser);

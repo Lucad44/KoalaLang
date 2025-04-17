@@ -10,11 +10,47 @@
 #include "functions.h"
 #include "memory.h"
 
+typedef struct {
+    struct hashmap *map_to_clean;
+} CleanupData;
+
 jmp_buf *current_jmp_buf = NULL;
 
 ReturnContextNode* current_return_ctx = NULL;
 
 double return_value = 0.0;
+
+static void free_function_scope_lists(struct hashmap *scope) {
+    if (!scope) return;
+    size_t i = 0;
+    void *item;
+    // Create a temporary list of list heads to free
+    ListNode **heads_to_free = NULL;
+    int count = 0;
+
+    while (hashmap_iter(scope, &i, &item)) {
+        const Variable *var = (Variable *)item;
+        if (var->type == VAR_LIST && var->value.list_val.head != NULL) {
+            // Add head to our temporary list
+            heads_to_free = safe_realloc(heads_to_free, (count + 1) * sizeof(ListNode*));
+            heads_to_free[count++] = var->value.list_val.head;
+            // Important: Set the head in the variable to NULL *after* adding
+            // it to the list, so hashmap_free doesn't try to double-free.
+            // However, hashmap_free currently has NULL for elfree, so this isn't strictly needed now.
+            // var->value.list_val.head = NULL; // If hashmap had elfree, this would be crucial.
+        } else if (var->type == VAR_STR && var->value.str_val != NULL) {
+            // Free string value allocated during argument passing
+            free(var->value.str_val);
+            // var->value.str_val = NULL; // If hashmap had elfree
+        }
+    }
+
+    // Now free the collected list heads
+    for (int j = 0; j < count; ++j) {
+        free_list(heads_to_free[j]);
+    }
+    free(heads_to_free); // Free the temporary list itself
+}
 
 Variable *get_variable(struct hashmap *scope, char *name) {
     Variable *variable = (Variable *) hashmap_get(scope, &(Variable) {
@@ -779,34 +815,193 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
     }
 
     struct hashmap *function_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
-                                                  variable_hash, variable_compare, NULL, NULL);
+                                                  variable_hash, variable_compare,
+                                                  NULL, NULL);
+     if (!function_scope) {
+         fprintf(stderr, "Failed to allocate scope for function %s\n", func_call->name);
+         exit(EXIT_FAILURE);
+     }
+
+
+    // Process arguments and populate function scope
     for (int i = 0; i < func_call->arg_count; i++) {
         const Parameter *param = &function->parameters[i];
-        const ASTNode *arg = func_call->arguments[i];
-        ReturnContext arg_ctx = {0, RET_NONE, {0}, NULL, NULL};
-        if (param->type[0] == 'n') {
-            double value = evaluate_expression(arg, scope, &arg_ctx);
-            hashmap_set(function_scope, &(Variable){
-                .name = param->name,
-                .type = VAR_NUM,
-                .value = { .num_val = value }
-            });
-        } else if (param->type[0] == 's') {
-            char *value = get_string_value(arg, scope, &arg_ctx);
-            hashmap_set(function_scope, &(Variable){
-                .name = param->name,
-                .type = VAR_STR,
-                .value = { .str_val = value }
-            });
+        const ASTNode *arg_node = func_call->arguments[i];
+        ReturnContext arg_eval_ctx = {0, RET_NONE, {0}, NULL, NULL}; // Context for argument evaluation
+
+        if (param->is_list) {
+            // --- Handle List Parameter ---
+            ListNode *list_to_pass_head = NULL;
+            VarType list_element_type = param->type; // Expected type
+
+            // ---> MODIFICATION START <---
+            if (arg_node->type == NODE_LIST_LITERAL) {
+                 // Argument is a list literal: evaluate it in the *caller's* scope
+                 const ListLiteralNode *literal_node = &arg_node->data.list_literal;
+                 ListNode *current_new_node = NULL;
+
+                // NOTE: Parser passed a placeholder type. Check compatibility now.
+                // Although, the literal itself doesn't strictly have a type until evaluated.
+
+                 for (int j = 0; j < literal_node->element_count; ++j) {
+                     ListElement element;
+                     element.type = list_element_type; // Assign expected type
+
+                     // Evaluate element expression in the CALLER'S scope (variable 'scope')
+                     if (list_element_type == VAR_NUM) {
+                         element.value.num_val = evaluate_expression(literal_node->elements[j], scope, &arg_eval_ctx);
+                         // Check arg_eval_ctx for errors/returns from evaluation if needed
+                     } else if (list_element_type == VAR_STR) {
+                         element.value.str_val = get_string_value(literal_node->elements[j], scope, &arg_eval_ctx);
+                         if (!element.value.str_val) {
+                             fprintf(stderr, "Error evaluating string element %d for list literal argument %d in call to '%s'.\n",
+                                      j, i + 1, func_call->name);
+                             free_list(list_to_pass_head); // Clean up partially built list
+                             free_function_scope_lists(function_scope);
+                             hashmap_free(function_scope);
+                             exit(EXIT_FAILURE);
+                         }
+                     } else {
+                          fprintf(stderr, "Internal Error: Unsupported list element type %d for parameter '%s' in function '%s'.\n",
+                                  list_element_type, param->name, func_call->name);
+                         free_list(list_to_pass_head);
+                         free_function_scope_lists(function_scope);
+                         hashmap_free(function_scope);
+                         exit(EXIT_FAILURE);
+                     }
+
+                     // Create the list node
+                     ListNode *new_node = create_list_node(element);
+                      if (!new_node) {
+                           fprintf(stderr, "Error: Failed to allocate memory for list node from literal for function '%s'.\n", func_call->name);
+                           // Free potentially allocated string
+                           if (list_element_type == VAR_STR && element.value.str_val) free(element.value.str_val);
+                           free_list(list_to_pass_head);
+                           free_function_scope_lists(function_scope);
+                           hashmap_free(function_scope);
+                           exit(EXIT_FAILURE);
+                      }
+
+
+                     // Append node to the temporary list
+                     if (list_to_pass_head == NULL) {
+                         list_to_pass_head = new_node;
+                         current_new_node = new_node;
+                     } else {
+                         current_new_node->next = new_node;
+                         current_new_node = new_node;
+                     }
+                 }
+                 // list_to_pass_head now holds the evaluated list literal
+
+            } else if (arg_node->type == NODE_EXPR_VARIABLE) {
+                 // Argument is a variable name (existing behavior)
+                 char *list_arg_name = arg_node->data.variable.name;
+                 Variable *list_var_caller = get_variable(scope, list_arg_name);
+
+                 if (!list_var_caller) {
+                     fprintf(stderr, "Error: List variable '%s' (argument %d for function '%s') not found in caller scope.\n",
+                              list_arg_name, i + 1, func_call->name);
+                     free_function_scope_lists(function_scope);
+                     hashmap_free(function_scope);
+                     exit(EXIT_FAILURE);
+                 }
+                 if (list_var_caller->type != VAR_LIST) {
+                      fprintf(stderr, "Error: Variable '%s' passed as argument %d to function '%s' is not a list.\n",
+                              list_arg_name, i + 1, func_call->name);
+                      free_function_scope_lists(function_scope);
+                      hashmap_free(function_scope);
+                      exit(EXIT_FAILURE);
+                 }
+                 if (list_var_caller->value.list_val.element_type != list_element_type) {
+                      fprintf(stderr, "Error: Type mismatch for list argument %d ('%s') for function '%s'. Expected list of type %d, got %d.\n",
+                              i + 1, list_arg_name, func_call->name, list_element_type, list_var_caller->value.list_val.element_type);
+                      free_function_scope_lists(function_scope);
+                      hashmap_free(function_scope);
+                      exit(EXIT_FAILURE);
+                 }
+                 // Copy the list from the caller's variable
+                 list_to_pass_head = copy_list(list_var_caller->value.list_val.head, list_element_type);
+                 if (!list_to_pass_head && list_var_caller->value.list_val.head != NULL) {
+                       fprintf(stderr, "Error: Failed to copy list argument %d for function '%s'.\n", i + 1, func_call->name);
+                       free_function_scope_lists(function_scope);
+                       hashmap_free(function_scope);
+                       exit(EXIT_FAILURE);
+                 }
+            } else {
+                 // Argument is neither a list literal nor a variable
+                 fprintf(stderr, "Error: Invalid argument type (%d) for list parameter '%s' in function '%s'. Expected list variable or literal.\n",
+                         arg_node->type, param->name, func_call->name);
+                 free_function_scope_lists(function_scope);
+                 hashmap_free(function_scope);
+                 exit(EXIT_FAILURE);
+            }
+            // ---> MODIFICATION END <---
+
+
+            // Create variable in function scope using list_to_pass_head
+            Variable function_param_var = {
+                .name = strdup(param->name), // Copy parameter name
+                .type = VAR_LIST,
+                .value = { .list_val = { .element_type = list_element_type, .head = list_to_pass_head } } // Use the created/copied list
+            };
+            if (!function_param_var.name) {
+                 fprintf(stderr, "Error: Failed to allocate memory for parameter name '%s'.\n", param->name);
+                 free_list(list_to_pass_head); // Free the created/copied list
+                 free_function_scope_lists(function_scope);
+                 hashmap_free(function_scope);
+                 exit(EXIT_FAILURE);
+            }
+
+            hashmap_set(function_scope, &function_param_var);
+            if (hashmap_oom(function_scope)) {
+                  fprintf(stderr, "Error: Out of memory setting list parameter '%s'.\n", param->name);
+                  free(function_param_var.name);
+                  free_list(list_to_pass_head);
+                  free_function_scope_lists(function_scope);
+                  hashmap_free(function_scope);
+                  exit(EXIT_FAILURE);
+            }
+
+        } else if (param->type == VAR_NUM) {
+            // --- Handle Num Parameter (existing behavior) ---
+            double value = evaluate_expression(arg_node, scope, &arg_eval_ctx);
+            // Handle potential return from arg evaluation if needed
+             Variable function_param_var = {
+                  .name = strdup(param->name),
+                  .type = VAR_NUM,
+                  .value = { .num_val = value }
+              };
+             if (!function_param_var.name) { /* ... OOM check ... */ free_function_scope_lists(function_scope); hashmap_free(function_scope); exit(EXIT_FAILURE); }
+             hashmap_set(function_scope, &function_param_var);
+              if (hashmap_oom(function_scope)) { /* ... OOM check ... */ free(function_param_var.name); free_function_scope_lists(function_scope); hashmap_free(function_scope); exit(EXIT_FAILURE); }
+
+        } else if (param->type == VAR_STR) {
+            // --- Handle Str Parameter (existing behavior) ---
+            char *value = get_string_value(arg_node, scope, &arg_eval_ctx);
+             // get_string_value already strdup's, so we own 'value'
+             Variable function_param_var = {
+                  .name = strdup(param->name), // Need name for the parameter entry
+                  .type = VAR_STR,
+                  .value = { .str_val = value } // Pass ownership of 'value' string
+              };
+             if (!function_param_var.name) { free(value); /* ... OOM check ... */ free_function_scope_lists(function_scope); hashmap_free(function_scope); exit(EXIT_FAILURE); }
+             hashmap_set(function_scope, &function_param_var);
+              if (hashmap_oom(function_scope)) { free(value); free(function_param_var.name); /* ... OOM check ... */ free_function_scope_lists(function_scope); hashmap_free(function_scope); exit(EXIT_FAILURE); }
         }
     }
 
-    const double func_ret = execute_function_body(function->body, function_scope);
+    // Execute function body with the populated scope
+    const double func_ret = execute_function_body(function->body, function_scope); // Adapt return handling if needed
 
+    // Set caller's return context
+    // TODO: Need proper handling for non-numeric return types from functions
     caller_ret_ctx->is_return = 1;
-    caller_ret_ctx->type = RET_NUM;
+    caller_ret_ctx->type = RET_NUM; // Assuming numeric return only for now
     caller_ret_ctx->value.num_val = func_ret;
 
+    // Cleanup Function Scope
+    free_function_scope_lists(function_scope); // This should now free lists created from literals as well
     hashmap_free(function_scope);
 }
 
@@ -953,4 +1148,3 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
         }
     }
 }
-

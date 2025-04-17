@@ -104,3 +104,63 @@ char *list_to_string(const ListNode *head, const VarType element_type) {
     strncat(buffer, "]\n", 2);
     return strdup(buffer);
 }
+
+ListNode *copy_list(const ListNode *head, const VarType element_type) {
+    if (!head) {
+        return NULL; // Return NULL for an empty original list
+    }
+
+    ListNode *new_head = NULL;
+    ListNode *new_tail = NULL;
+    const ListNode *current = head;
+
+    while (current != NULL) {
+        ListElement new_element;
+        new_element.type = element_type;
+
+        // Copy the value - need deep copy for strings
+        if (element_type == VAR_NUM) {
+            new_element.value.num_val = current->element.value.num_val;
+        } else if (element_type == VAR_STR) {
+            if (current->element.value.str_val != NULL) {
+                new_element.value.str_val = strdup(current->element.value.str_val);
+                if (!new_element.value.str_val) {
+                    fprintf(stderr, "Error: Failed to duplicate string during list copy.\n");
+                    free_list(new_head); // Free the partially created new list
+                    return NULL; // Indicate error
+                }
+            } else {
+                new_element.value.str_val = NULL; // Copy NULL pointer
+            }
+        } else {
+            fprintf(stderr, "Internal Error: Unsupported element type %d during list copy.\n", element_type);
+             free_list(new_head);
+             return NULL;
+        }
+
+        // Create the new node
+        ListNode *new_node = create_list_node(new_element);
+        if (!new_node) {
+            fprintf(stderr, "Error: Failed to allocate node during list copy.\n");
+            // If string was duplicated, free it before freeing the list
+             if (element_type == VAR_STR && new_element.value.str_val != NULL) {
+                 free(new_element.value.str_val);
+             }
+            free_list(new_head); // Free the partially created new list
+            return NULL; // Indicate error
+        }
+
+        // Append to the new list
+        if (new_head == NULL) {
+            new_head = new_node;
+            new_tail = new_node;
+        } else {
+            new_tail->next = new_node;
+            new_tail = new_node;
+        }
+
+        current = current->next; // Move to the next node in the original list
+    }
+
+    return new_head; // Return the head of the newly created copy
+}
