@@ -20,11 +20,14 @@ bool function_iter(const void *item, void *udata) {
     printf("\n%s(", function->name);
     for (int i = 0; i < function->param_count; i++) {
         if (function->parameters[i].type == VAR_NUM) {
-            printf("int %s, ", function->parameters[i].name);
+            printf("int %s", function->parameters[i].name);
         } else if (function->parameters[i].type == VAR_STR) {
-            printf("str %s, ", function->parameters[i].name);
+            printf("str %s", function->parameters[i].name);
         } else if (function->parameters[i].type == VAR_LIST) {
-            printf("list[] %s, ", function->parameters[i].name);
+            printf("list[] %s", function->parameters[i].name);
+        }
+        if (i != function->param_count - 1) {
+            printf(", ");
         }
     }
     printf(")\n");

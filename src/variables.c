@@ -98,10 +98,12 @@ char *list_to_string(const ListNode *head, const VarType element_type) {
     return strdup(buffer);
 }
 
-ListNode *copy_list(const ListNode *head, const VarType element_type) {
+ListNode *deep_copy_list(const ListNode *head) {
     if (!head) {
         return NULL;
     }
+
+    const VarType element_type = head->element.type;
 
     ListNode *new_head = NULL;
     ListNode *new_tail = NULL;
@@ -126,16 +128,16 @@ ListNode *copy_list(const ListNode *head, const VarType element_type) {
             }
         } else {
             fprintf(stderr, "Internal Error: Unsupported element type %d during list copy.\n", element_type);
-             free_list(new_head);
-             return NULL;
+            free_list(new_head);
+            return NULL;
         }
 
         ListNode *new_node = create_list_node(new_element);
         if (!new_node) {
             fprintf(stderr, "Error: Failed to allocate node during list copy.\n");
-             if (element_type == VAR_STR && new_element.value.str_val != NULL) {
-                 free(new_element.value.str_val);
-             }
+            if (element_type == VAR_STR && new_element.value.str_val != NULL) {
+                free(new_element.value.str_val);
+            }
             free_list(new_head);
             return NULL;
         }

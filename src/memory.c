@@ -1,10 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stddef.h>
 #include "memory.h"
 #include "ast.h"
-#include "variables.h"
-#include "hashmap.h"
 
 void* safe_malloc(const size_t size) {
     void *ptr = malloc(size);

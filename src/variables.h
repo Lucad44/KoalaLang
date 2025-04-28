@@ -59,6 +59,6 @@ void free_list(ListNode *head);
 
 char *list_to_string(const ListNode *head, VarType element_type);
 
-ListNode *copy_list(const ListNode *head, VarType element_type);
+ListNode *deep_copy_list(const ListNode *head);
 
 #endif
