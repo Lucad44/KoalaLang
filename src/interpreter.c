@@ -12,6 +12,20 @@
 
 ReturnContextNode* current_return_ctx = NULL;
 
+int is_truthy(const ReturnValue val) {
+    if (val.type == RET_NUM) {
+        return val.value.num_val != 0.0;
+    }
+    if (val.type == RET_STR) {
+        return val.value.str_val != NULL && strlen(val.value.str_val) > 0;
+    }
+    if (val.type == RET_LIST) {
+        return val.value.list_val != NULL;
+    }
+    return 0;
+}
+
+
 void free_return_value(const ReturnType type, ReturnValue *value) {
     if (!value) return;
 
@@ -82,7 +96,11 @@ static void execute_block(const BlockNode *block, struct hashmap *scope, ReturnC
 }
 
 ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
-    ReturnValue result = { .type = RET_NONE };  // Always initialize safely
+    if (node == NULL) {
+        fprintf(stderr, "Error: Trying to evaluate a NULL expression node.\n");
+        exit(EXIT_FAILURE);
+    }
+    ReturnValue result = { .type = RET_NONE };
     switch (node->type) {
         case NODE_EXPR_LITERAL:
             result.type = RET_NUM;
@@ -132,85 +150,115 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                     result.type = RET_NUM;
                     result.value.num_val = -operand_value.value.num_val;
                     break;
+                case OP_NOT:
+                    result.type = RET_NUM;
+                    result.value.num_val = !is_truthy(operand_value);
+                    break;
                 default:
                     fprintf(stderr, "Error: Unknown unary operator %d.\n", unary_node->op);
                     exit(EXIT_FAILURE);
             }
+            break;
         }
         case NODE_EXPR_BINARY: {
             ReturnContext left_eval_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
             ReturnContext right_eval_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
+            ReturnValue left_val = evaluate_expression(node->data.binary_expr.left, scope, &left_eval_ctx);
+            if (node->data.binary_expr.op == OP_LOGICAL_AND && !is_truthy(left_val)) {
+                result.type = RET_NUM;
+                result.value.num_val = 0.0;
+                free_return_value(left_val.type, &left_val);
+                break;
+            }
+            if (node->data.binary_expr.op == OP_LOGICAL_OR && is_truthy(left_val)) {
+                result.type = RET_NUM;
+                result.value.num_val = 1.0;
+                free_return_value(left_val.type, &left_val);
+                break;
+            }
 
-            const double left = evaluate_expression(node->data.binary_expr.left, scope, &left_eval_ctx).value.num_val;
-            const double right = evaluate_expression(node->data.binary_expr.right, scope, &right_eval_ctx).value.num_val;
+            ReturnValue right_val = evaluate_expression(node->data.binary_expr.right, scope, &right_eval_ctx);
+            if (node->data.binary_expr.op != OP_LOGICAL_AND && node->data.binary_expr.op != OP_LOGICAL_OR) {
+                 if (left_val.type != RET_NUM || right_val.type != RET_NUM) {
+                      fprintf(stderr, "Error: Binary operator %d requires numeric operands (got types %d and %d).\n",
+                              node->data.binary_expr.op, left_val.type, right_val.type);
+                      free_return_value(left_val.type, &left_val);
+                      free_return_value(right_val.type, &right_val);
+                      exit(EXIT_FAILURE);
+                  }
+            }
 
-            double binary_result;
+            double num_result;
+            result.type = RET_NUM;
+
             switch (node->data.binary_expr.op) {
                 case OP_PLUS:
-                    binary_result = left + right;
+                    num_result = left_val.value.num_val + right_val.value.num_val;
                     break;
                 case OP_MINUS:
-                    binary_result = left - right;
+                    num_result = left_val.value.num_val - right_val.value.num_val;
                     break;
                 case OP_MULTIPLY:
-                    binary_result = left * right;
+                    num_result = left_val.value.num_val * right_val.value.num_val;
                     break;
                 case OP_DIVIDE:
-                    if (right == 0) {
-                        fprintf(stderr, "Error: Division by zero\n");
-                        exit(EXIT_FAILURE);
+                    if (right_val.value.num_val == 0) {
+                        fprintf(stderr, "Error: Division by zero\n"); exit(EXIT_FAILURE);
                     }
-                    binary_result = left / right;
+                    num_result = left_val.value.num_val / right_val.value.num_val;
                     break;
                 case OP_MODULO:
-                    if (right == 0) {
-                        fprintf(stderr, "Error: Modulo by zero\n");
-                        exit(EXIT_FAILURE);
-                    }
-                    binary_result = (double) ((long long) left % (long long) right);
+                     if ((long long) right_val.value.num_val == 0) {
+                         fprintf(stderr, "Error: Modulo by zero\n"); exit(EXIT_FAILURE);
+                     }
+                     num_result = (double)((long long)left_val.value.num_val % (long long)right_val.value.num_val);
                     break;
                 case OP_POWER:
-                    if (left == 0 && right == 0) {
-                        fprintf(stderr, "Error: 0 to the power of 0 is undefined\n");
-                        exit(EXIT_FAILURE);
-                    }
-                    binary_result = pow(left, right);
+                    num_result = pow(left_val.value.num_val, right_val.value.num_val);
                     break;
-                case OP_AND:
-                    binary_result = (long long) left & (long long) right;
+                case OP_BITWISE_AND:
+                    num_result = (double) ((long long) left_val.value.num_val & (long long) right_val.value.num_val);
                     break;
-                case OP_OR:
-                    binary_result = (long long) left | (long long) right;
+                case OP_BITWISE_OR:
+                    num_result = (double) ((long long) left_val.value.num_val | (long long) right_val.value.num_val);
                     break;
-                case OP_XOR:
-                    binary_result = (long long) left ^ (long long) right;
+                case OP_BITWISE_XOR:
+                    num_result = (double) ((long long) left_val.value.num_val ^ (long long) right_val.value.num_val);
                     break;
                 case OP_LESS:
-                    binary_result = left < right;
+                    num_result = left_val.value.num_val < right_val.value.num_val;
                     break;
                 case OP_GREATER:
-                    binary_result = left > right;
+                    num_result = left_val.value.num_val > right_val.value.num_val;
                     break;
                 case OP_EQUAL:
-                    binary_result = left == right;
+                    num_result = left_val.value.num_val == right_val.value.num_val;
                     break;
                 case OP_NOT_EQUAL:
-                    binary_result = left != right;
+                    num_result = left_val.value.num_val != right_val.value.num_val;
                     break;
                 case OP_LESS_EQUAL:
-                    binary_result = left <= right;
+                    num_result = left_val.value.num_val <= right_val.value.num_val;
                     break;
                 case OP_GREATER_EQUAL:
-                    binary_result = left >= right;
+                    num_result = left_val.value.num_val >= right_val.value.num_val;
+                    break;
+                case OP_LOGICAL_AND:
+                case OP_LOGICAL_OR:
+                    num_result = is_truthy(right_val);
                     break;
                 default:
-                    binary_result = 0;
-                    break;
+                    fprintf(stderr, "Error: Unknown binary operator %d.\n", node->data.binary_expr.op);
+                    free_return_value(left_val.type, &left_val);
+                    free_return_value(right_val.type, &right_val);
+                    exit(EXIT_FAILURE);
             }
-            result.type = RET_NUM;
-            result.value.num_val = binary_result;
+            result.value.num_val = num_result;
+             free_return_value(left_val.type, &left_val);
+             free_return_value(right_val.type, &right_val);
             break;
         }
+
 
         case NODE_FUNC_CALL:
             execute_func_call(&node->data.func_call, scope, ret_ctx);
@@ -264,19 +312,26 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             }
 
             if (list_var->value.list_val.element_type == VAR_NUM) {
-                 if (current->element.type == VAR_NUM) {
-                     result.type = RET_NUM;
-                     result.value.num_val = current->element.value.num_val;
-                 }
-                 fprintf(stderr, "Internal Error: List '%s' element type mismatch at index %d.\n", access_node->list_name, index);
-                 exit(EXIT_FAILURE);
-            }
-            if (list_var->value.list_val.element_type == VAR_STR) {
-                fprintf(stderr, "Error: Accessing string list elements directly within numerical expressions is not yet supported.\n");
+                if (current->element.type == VAR_NUM) {
+                    result.type = RET_NUM;
+                    result.value.num_val = current->element.value.num_val;
+                } else {
+                    fprintf(stderr, "Internal Error: List '%s' element type mismatch at index %d.\n", access_node->list_name, index);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (list_var->value.list_val.element_type == VAR_STR) {
+                if (current->element.type == VAR_STR) {
+                    result.type = RET_STR;
+                    result.value.str_val = current->element.value.str_val;
+                } else {
+                    fprintf(stderr, "Internal Error: List '%s' element type mismatch at index %d.\n", access_node->list_name, index);
+                    exit(EXIT_FAILURE);
+                }
+            } else {
+                fprintf(stderr, "Internal Error: Unknown list element type for '%s'.\n", access_node->list_name);
                 exit(EXIT_FAILURE);
             }
-            fprintf(stderr, "Internal Error: Unknown list element type for '%s'.\n", access_node->list_name);
-            exit(EXIT_FAILURE);
+            break;
         }
         case NODE_EXPR_POSTFIX: {
             const PostfixExprNode *postfix_node = &node->data.postfix_expr;
@@ -650,12 +705,24 @@ int evaluate_condition(ASTNode *condition, struct hashmap *scope) {
             }
 
             switch (condition->data.binary_expr.op) {
-                case OP_LESS: return left < right;
-                case OP_GREATER: return left > right;
-                case OP_EQUAL: return left == right;
-                case OP_NOT_EQUAL: return left != right;
-                case OP_LESS_EQUAL: return left <= right;
-                case OP_GREATER_EQUAL: return left >= right;
+                case OP_LESS:
+                    return left < right;
+                case OP_GREATER:
+                    return left > right;
+                case OP_EQUAL:
+                    return left == right;
+                case OP_NOT_EQUAL:
+                    return left != right;
+                case OP_LESS_EQUAL:
+                    return left <= right;
+                case OP_GREATER_EQUAL:
+                    return left >= right;
+                case OP_LOGICAL_AND:
+                    return evaluate_condition(condition->data.binary_expr.left, scope) &&
+                        evaluate_condition(condition->data.binary_expr.right, scope);
+                case OP_LOGICAL_OR:
+                    return evaluate_condition(condition->data.binary_expr.left, scope) ||
+                        evaluate_condition(condition->data.binary_expr.right, scope);
                 default: ;
             }
             break;
@@ -689,43 +756,118 @@ void execute_postfix(const PostfixExprNode *node, struct hashmap *scope) {
 }
 
 void execute_if(const IfNode *if_node, struct hashmap *scope, ReturnContext *ret_ctx) {
-    struct hashmap *if_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
-        variable_hash, variable_compare, NULL, NULL);
+    struct hashmap *if_scope = NULL; // Initialize scope pointer
 
-    if (evaluate_condition(if_node->condition, scope)) {
-        execute(if_node->body, if_scope, ret_ctx);
+    ReturnContext condition_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
+    ReturnValue condition_result = evaluate_expression(if_node->condition, scope, &condition_ctx);
+
+    // Check if the condition evaluation itself triggered a return
+    if (condition_ctx.is_return) {
+        ret_ctx->is_return = 1;
+        ret_ctx->ret_val = condition_ctx.ret_val; // Propagate return value
+        // free_return_value(condition_result.type, &condition_result); // condition_result might not be fully initialized if return happened
         return;
     }
 
+
+    int condition_is_true = is_truthy(condition_result);
+    free_return_value(condition_result.type, &condition_result); // Free the result after checking truthiness
+
+    if (condition_is_true) {
+        if_scope = hashmap_new(sizeof(Variable), 0, 0, 0, variable_hash, variable_compare, NULL, NULL);
+        execute(if_node->body, if_scope, ret_ctx);
+        free_function_scope_lists(if_scope); // Clean up scope lists if any were created
+        hashmap_free(if_scope);
+        return; // Exit after executing the 'if' body
+    }
+
+    // --- Check elif conditions ---
     for (int i = 0; i < if_node->elif_count; i++) {
         const ASTNode *elif_node = if_node->elif_nodes[i];
-        if_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
-            variable_hash, variable_compare, NULL, NULL);
-        if (evaluate_condition(elif_node->data.if_stmt.condition, scope)) {
+        condition_ctx.is_return = 0; // Reset return flag for next condition
+        condition_ctx.ret_val.type = RET_NONE;
+
+        ReturnValue elif_condition_result = evaluate_expression(elif_node->data.if_stmt.condition, scope, &condition_ctx);
+
+         if (condition_ctx.is_return) {
+             ret_ctx->is_return = 1;
+             ret_ctx->ret_val = condition_ctx.ret_val;
+             // free_return_value(elif_condition_result.type, &elif_condition_result);
+             return;
+         }
+
+        int elif_condition_is_true = is_truthy(elif_condition_result);
+        free_return_value(elif_condition_result.type, &elif_condition_result); // Free result
+
+        if (elif_condition_is_true) {
+            if_scope = hashmap_new(sizeof(Variable), 0, 0, 0, variable_hash, variable_compare, NULL, NULL);
             execute(elif_node->data.if_stmt.body, if_scope, ret_ctx);
+             free_function_scope_lists(if_scope);
             hashmap_free(if_scope);
-            return;
+            return; // Exit after executing an 'elif' body
         }
     }
 
-    if_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
-            variable_hash, variable_compare, NULL, NULL);
+    // --- Execute else body ---
     if (if_node->else_body) {
+         if_scope = hashmap_new(sizeof(Variable), 0, 0, 0, variable_hash, variable_compare, NULL, NULL);
         execute(if_node->else_body, if_scope, ret_ctx);
+         free_function_scope_lists(if_scope);
+        hashmap_free(if_scope);
     }
-
-    hashmap_free(if_scope);
 }
 
+
+
 void execute_while(const WhileNode *while_node, struct hashmap *scope, ReturnContext *ret_ctx) {
-    struct hashmap *while_scope = hashmap_new(sizeof(Variable), 0, 0, 0,
-        variable_hash, variable_compare, NULL, NULL);
+    struct hashmap *while_scope = NULL; // Defer scope creation until needed
 
-    while (evaluate_condition(while_node->condition, scope)) {
+    while (1) { // Loop indefinitely until condition is false or return occurs
+        ReturnContext condition_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
+        ReturnValue condition_result = evaluate_expression(while_node->condition, scope, &condition_ctx);
+
+         // Check if condition evaluation caused a return
+         if (condition_ctx.is_return) {
+             ret_ctx->is_return = 1;
+             ret_ctx->ret_val = condition_ctx.ret_val;
+             // free_return_value(condition_result.type, &condition_result); // Result might not be set
+             break; // Exit loop
+         }
+
+
+        int condition_is_true = is_truthy(condition_result);
+        free_return_value(condition_result.type, &condition_result); // Free result
+
+        if (!condition_is_true) {
+            break; // Exit loop if condition is false
+        }
+
+        // Create scope for this iteration if it doesn't exist
+        // Or maybe create a new scope *each* iteration? Depends on desired scoping rules.
+        // Let's create a new scope each time for simplicity, like the 'if' block.
+        while_scope = hashmap_new(sizeof(Variable), 0, 0, 0, variable_hash, variable_compare, NULL, NULL);
+        if (!while_scope) {
+             fprintf(stderr, "Failed to allocate scope for while loop iteration.\n");
+             exit(EXIT_FAILURE); // Or handle error more gracefully
+        }
+
         execute(while_node->body, while_scope, ret_ctx);
-    }
 
-    hashmap_free(while_scope);
+         // Clean up the scope created for this iteration
+         free_function_scope_lists(while_scope);
+         hashmap_free(while_scope);
+         while_scope = NULL; // Reset for next potential iteration
+
+
+        if (ret_ctx->is_return) {
+            break; // Exit loop if body caused a return
+        }
+    }
+     // Clean up scope if loop exited while scope was allocated (e.g., due to return)
+     if (while_scope) {
+         free_function_scope_lists(while_scope);
+         hashmap_free(while_scope);
+     }
 }
 
 void execute_func_decl(const FuncDeclNode *func_decl) {

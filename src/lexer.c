@@ -139,14 +139,22 @@ Token next_token(Lexer *lexer) {
             lexer->current_pos++;
             return (Token) {TOKEN_OPERATOR_MODULO, NULL, 0, NULL, NULL};
         case '&':
+            if (lexer->source[lexer->current_pos + 1] == '&') {
+                lexer->current_pos += 2;
+                return (Token) {TOKEN_OPERATOR_LOGICAL_AND, NULL, 0, NULL, NULL};
+            }
             lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_AND, NULL, 0, NULL, NULL};
+            return (Token) {TOKEN_OPERATOR_BITWISE_AND, NULL, 0, NULL, NULL};
         case '|':
+            if (lexer->source[lexer->current_pos + 1] == '|') {
+                lexer->current_pos += 2;
+                return (Token) {TOKEN_OPERATOR_LOGICAL_OR, NULL, 0, NULL, NULL};
+            }
             lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_OR, NULL, 0, NULL, NULL};
+            return (Token) {TOKEN_OPERATOR_BITWISE_OR, NULL, 0, NULL, NULL};
         case '^':
             lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_XOR, NULL, 0, NULL, NULL};
+            return (Token) {TOKEN_OPERATOR_BITWISE_XOR, NULL, 0, NULL, NULL};
         case '(':
             lexer->current_pos++;
             return (Token) {TOKEN_LPAREN, NULL, 0, NULL, NULL};
@@ -159,10 +167,10 @@ Token next_token(Lexer *lexer) {
         case '}':
             lexer->current_pos++;
             return (Token) {TOKEN_RBRACE, NULL, 0, NULL, NULL};
-        case '[': // Added left bracket tokenization
+        case '[':
             lexer->current_pos++;
             return (Token) {TOKEN_LBRACKET, NULL, 0, NULL, NULL};
-        case ']': // Added right bracket tokenization
+        case ']':
             lexer->current_pos++;
             return (Token) {TOKEN_RBRACKET, NULL, 0, NULL, NULL};
         case ';':

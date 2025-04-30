@@ -34,6 +34,8 @@ typedef struct ReturnContextNode {
     struct ReturnContextNode *prev;
 } ReturnContextNode;
 
+int is_truthy(ReturnValue val);
+
 Variable *get_variable(struct hashmap *scope, char *name);
 
 void free_return_value(ReturnType type, ReturnValue *value);

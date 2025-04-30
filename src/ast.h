@@ -32,15 +32,17 @@ typedef enum {
     OP_DIVIDE,
     OP_MODULO,
     OP_POWER,
-    OP_AND,
-    OP_OR,
-    OP_XOR,
+    OP_BITWISE_AND,
+    OP_BITWISE_OR,
+    OP_BITWISE_XOR,
     OP_LESS,
     OP_GREATER,
     OP_EQUAL,
     OP_NOT_EQUAL,
     OP_LESS_EQUAL,
-    OP_GREATER_EQUAL
+    OP_GREATER_EQUAL,
+    OP_LOGICAL_AND,
+    OP_LOGICAL_OR
 } BinaryOperator;
 
 typedef enum {
@@ -114,8 +116,8 @@ typedef struct {
 
 typedef struct {
     char *name;
-    VarType type; // Represents element type for lists (VAR_NUM/VAR_STR), or VAR_NUM/VAR_STR for scalars
-    bool is_list; // Flag to indicate if it's a list parameter
+    VarType type;
+    bool is_list;
 } Parameter;
 
 typedef struct {

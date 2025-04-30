@@ -125,9 +125,12 @@ ASTNode *parse_binary_expr(Parser *parser, ASTNode *left, const int min_prec) {
         BinaryOperator op;
         int prec;
     } ops[] = {
-        {TOKEN_OPERATOR_OR, OP_OR, 1},
-        {TOKEN_OPERATOR_XOR, OP_XOR, 2},
-        {TOKEN_OPERATOR_AND, OP_AND, 3},
+        {TOKEN_OPERATOR_BITWISE_OR, OP_BITWISE_OR, 1},
+        {TOKEN_OPERATOR_BITWISE_XOR, OP_BITWISE_XOR, 2},
+        {TOKEN_OPERATOR_BITWISE_AND, OP_BITWISE_AND, 3},
+
+        {TOKEN_OPERATOR_LOGICAL_AND, OP_LOGICAL_AND, 4},
+        {TOKEN_OPERATOR_LOGICAL_OR, OP_LOGICAL_OR, 4},
 
         {TOKEN_OPERATOR_EQUAL, OP_EQUAL, 7},
         {TOKEN_OPERATOR_NOT_EQUAL, OP_NOT_EQUAL, 7},
@@ -282,7 +285,9 @@ static ASTNode *parse_condition(Parser *parser) {
         op_type == TOKEN_OPERATOR_EQUAL ||
         op_type == TOKEN_OPERATOR_NOT_EQUAL ||
         op_type == TOKEN_OPERATOR_LESS_EQUAL ||
-        op_type == TOKEN_OPERATOR_GREATER_EQUAL)
+        op_type == TOKEN_OPERATOR_GREATER_EQUAL ||
+        op_type == TOKEN_OPERATOR_LOGICAL_AND ||
+        op_type == TOKEN_OPERATOR_LOGICAL_OR)
     {
         advance(parser);
         ASTNode *right = parse_primary(parser);
@@ -295,7 +300,9 @@ static ASTNode *parse_condition(Parser *parser) {
             op_type == TOKEN_OPERATOR_EQUAL ? OP_EQUAL :
             op_type == TOKEN_OPERATOR_NOT_EQUAL ? OP_NOT_EQUAL :
             op_type == TOKEN_OPERATOR_LESS_EQUAL ? OP_LESS_EQUAL :
-            op_type == TOKEN_OPERATOR_GREATER_EQUAL ? OP_GREATER_EQUAL : -1;
+            op_type == TOKEN_OPERATOR_GREATER_EQUAL ? OP_GREATER_EQUAL :
+            op_type == TOKEN_OPERATOR_LOGICAL_AND ? OP_LOGICAL_AND :
+            op_type == TOKEN_OPERATOR_LOGICAL_OR ? OP_LOGICAL_OR : -1;
         comparison->data.binary_expr.left = left;
         comparison->data.binary_expr.right = right;
 
@@ -308,17 +315,17 @@ static ASTNode *parse_condition(Parser *parser) {
 ASTNode *parse_if(Parser *parser) {
     advance(parser);
     if (parser->current_token.type != TOKEN_LPAREN) {
-        fprintf(stderr, "Expected '(' after conditional statement\n");
+        fprintf(stderr, "Expected '(' after 'if'\n");
         exit(EXIT_FAILURE);
     }
     advance(parser);
-
-    ASTNode *condition = parse_condition(parser);
+    ASTNode *condition = parse_expression(parser);
 
     if (parser->current_token.type != TOKEN_RPAREN) {
-        fprintf(stderr, "Expected ')', got %d (lexeme: %s)\n",
+        fprintf(stderr, "Expected ')' after if condition, got %d (lexeme: %s)\n",
                parser->current_token.type,
                parser->current_token.lexeme ? parser->current_token.lexeme : "NULL");
+        free_ast(condition);
         exit(EXIT_FAILURE);
     }
     advance(parser);
@@ -332,34 +339,54 @@ ASTNode *parse_if(Parser *parser) {
     node->data.if_stmt.elif_nodes = NULL;
     node->data.if_stmt.elif_count = 0;
     node->data.if_stmt.else_body = NULL;
+
     while (parser->current_token.type == TOKEN_KEYWORD_ELIF) {
         advance(parser);
 
         if (parser->current_token.type != TOKEN_LPAREN) {
             fprintf(stderr, "Expected '(' after elif\n");
+            free_ast(node->data.if_stmt.condition);
+            free_ast(node->data.if_stmt.body);
+            for (int i = 0; i < node->data.if_stmt.elif_count; ++i) {
+                free_ast(node->data.if_stmt.elif_nodes[i]->data.if_stmt.condition);
+                free_ast(node->data.if_stmt.elif_nodes[i]->data.if_stmt.body);
+                free(node->data.if_stmt.elif_nodes[i]);
+            }
+            free(node->data.if_stmt.elif_nodes);
+            free(node);
             exit(EXIT_FAILURE);
         }
         advance(parser);
-
-        ASTNode *elif_condition = parse_condition(parser);
+        ASTNode *elif_condition = parse_expression(parser);
 
         if (parser->current_token.type != TOKEN_RPAREN) {
             fprintf(stderr, "Expected ')' after elif condition\n");
+            free_ast(elif_condition);
+            free_ast(node->data.if_stmt.condition);
+            free_ast(node->data.if_stmt.body);
+             for (int i = 0; i < node->data.if_stmt.elif_count; ++i) {
+                 free_ast(node->data.if_stmt.elif_nodes[i]->data.if_stmt.condition);
+                 free_ast(node->data.if_stmt.elif_nodes[i]->data.if_stmt.body);
+                 free(node->data.if_stmt.elif_nodes[i]);
+             }
+             free(node->data.if_stmt.elif_nodes);
+             free(node);
             exit(EXIT_FAILURE);
         }
         advance(parser);
 
         ASTNode *elif_body = parse_braced_block(parser);
 
-        node->data.if_stmt.elif_count++;
-        node->data.if_stmt.elif_nodes = safe_realloc(node->data.if_stmt.elif_nodes,
-            node->data.if_stmt.elif_count * sizeof(ASTNode*));
-
         ASTNode *elif_node = safe_malloc(sizeof(ASTNode));
         elif_node->type = NODE_ELIF;
         elif_node->data.if_stmt.condition = elif_condition;
         elif_node->data.if_stmt.body = elif_body;
-
+        elif_node->data.if_stmt.elif_nodes = NULL;
+        elif_node->data.if_stmt.elif_count = 0;
+        elif_node->data.if_stmt.else_body = NULL;
+        node->data.if_stmt.elif_count++;
+        node->data.if_stmt.elif_nodes = safe_realloc(node->data.if_stmt.elif_nodes,
+            node->data.if_stmt.elif_count * sizeof(ASTNode*));
         node->data.if_stmt.elif_nodes[node->data.if_stmt.elif_count - 1] = elif_node;
     }
 
@@ -386,19 +413,24 @@ ASTNode *parse_while(Parser *parser) {
         exit(EXIT_FAILURE);
     }
     advance(parser);
-    ASTNode *condition = parse_condition(parser);
+    ASTNode *condition = parse_expression(parser);
+
     if (parser->current_token.type != TOKEN_RPAREN) {
-        fprintf(stderr, "Expected ')', got %d (lexeme: %s)\n",
+        fprintf(stderr, "Expected ')' after while condition, got %d (lexeme: %s)\n",
                parser->current_token.type,
                parser->current_token.lexeme ? parser->current_token.lexeme : "NULL");
+        free_ast(condition);
         exit(EXIT_FAILURE);
     }
     advance(parser);
+
     ASTNode *body = parse_braced_block(parser);
+
     ASTNode *node = safe_malloc(sizeof(ASTNode));
     node->type = NODE_WHILE;
     node->data.while_stmt.condition = condition;
     node->data.while_stmt.body = body;
+
     return node;
 }
 
