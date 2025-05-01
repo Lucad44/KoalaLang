@@ -131,6 +131,7 @@ ASTNode *parse_binary_expr(Parser *parser, ASTNode *left, const int min_prec) {
 
         {TOKEN_OPERATOR_LOGICAL_AND, OP_LOGICAL_AND, 4},
         {TOKEN_OPERATOR_LOGICAL_OR, OP_LOGICAL_OR, 4},
+        {TOKEN_OPERATOR_LOGICAL_XOR, OP_LOGICAL_XOR, 4},
 
         {TOKEN_OPERATOR_EQUAL, OP_EQUAL, 7},
         {TOKEN_OPERATOR_NOT_EQUAL, OP_NOT_EQUAL, 7},
@@ -276,41 +277,6 @@ ASTNode *parse_declaration(Parser *parser) {
                            decl_type == TOKEN_KEYWORD_STR ? VAR_STR : -1;
     return node;
 }
-
-static ASTNode *parse_condition(Parser *parser) {
-    ASTNode *left = parse_primary(parser);
-    const TokenType op_type = parser->current_token.type;
-    if (op_type == TOKEN_OPERATOR_LESS ||
-        op_type == TOKEN_OPERATOR_GREATER ||
-        op_type == TOKEN_OPERATOR_EQUAL ||
-        op_type == TOKEN_OPERATOR_NOT_EQUAL ||
-        op_type == TOKEN_OPERATOR_LESS_EQUAL ||
-        op_type == TOKEN_OPERATOR_GREATER_EQUAL ||
-        op_type == TOKEN_OPERATOR_LOGICAL_AND ||
-        op_type == TOKEN_OPERATOR_LOGICAL_OR)
-    {
-        advance(parser);
-        ASTNode *right = parse_primary(parser);
-
-        ASTNode *comparison = safe_malloc(sizeof(ASTNode));
-        comparison->type = NODE_EXPR_BINARY;
-        comparison->data.binary_expr.op =
-            op_type == TOKEN_OPERATOR_LESS ? OP_LESS :
-            op_type == TOKEN_OPERATOR_GREATER ? OP_GREATER :
-            op_type == TOKEN_OPERATOR_EQUAL ? OP_EQUAL :
-            op_type == TOKEN_OPERATOR_NOT_EQUAL ? OP_NOT_EQUAL :
-            op_type == TOKEN_OPERATOR_LESS_EQUAL ? OP_LESS_EQUAL :
-            op_type == TOKEN_OPERATOR_GREATER_EQUAL ? OP_GREATER_EQUAL :
-            op_type == TOKEN_OPERATOR_LOGICAL_AND ? OP_LOGICAL_AND :
-            op_type == TOKEN_OPERATOR_LOGICAL_OR ? OP_LOGICAL_OR : -1;
-        comparison->data.binary_expr.left = left;
-        comparison->data.binary_expr.right = right;
-
-        return comparison;
-    }
-    return left;
-}
-
 
 ASTNode *parse_if(Parser *parser) {
     advance(parser);
@@ -887,7 +853,7 @@ ASTNode *parse_expression_statement(Parser *parser) {
         }
         case TOKEN_OPERATOR_PLUS_PLUS:
         case TOKEN_OPERATOR_MINUS_MINUS: {
-            PostfixOperator op = (parser->current_token.type == TOKEN_OPERATOR_PLUS_PLUS) ? OP_INC : OP_DEC;
+            const PostfixOperator op = (parser->current_token.type == TOKEN_OPERATOR_PLUS_PLUS) ? OP_INC : OP_DEC;
             advance(parser);
             node = safe_malloc(sizeof(ASTNode));
             node->type = NODE_EXPR_POSTFIX;

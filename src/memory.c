@@ -61,18 +61,16 @@ void free_ast(void *node) {
             break;
         case NODE_LIST_ACCESS:
             free(ast_node->data.list_access.list_name);
-            free_ast(ast_node->data.list_access.index_expr); // Recursively free the index expression
+            free_ast(ast_node->data.list_access.index_expr);
             break;
         case NODE_EXPR_UNARY:
             free_ast(ast_node->data.unary_expr.operand);
             break;
         case NODE_ASSIGNMENT:
             free(ast_node->data.assignment.target_name);
-            // Free index expression only if it exists (list assignment)
             if (ast_node->data.assignment.index_expr != NULL) {
                 free_ast(ast_node->data.assignment.index_expr);
             }
-            // Free the value expression
             free_ast(ast_node->data.assignment.value_expr);
             break;
         default:

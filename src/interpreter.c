@@ -178,7 +178,9 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             }
 
             ReturnValue right_val = evaluate_expression(node->data.binary_expr.right, scope, &right_eval_ctx);
-            if (node->data.binary_expr.op != OP_LOGICAL_AND && node->data.binary_expr.op != OP_LOGICAL_OR) {
+            if (node->data.binary_expr.op != OP_LOGICAL_AND && node->data.binary_expr.op != OP_LOGICAL_OR &&
+                node->data.binary_expr.op != OP_LOGICAL_XOR)
+            {
                  if (left_val.type != RET_NUM || right_val.type != RET_NUM) {
                       fprintf(stderr, "Error: Binary operator %d requires numeric operands (got types %d and %d).\n",
                               node->data.binary_expr.op, left_val.type, right_val.type);
@@ -246,6 +248,9 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                 case OP_LOGICAL_AND:
                 case OP_LOGICAL_OR:
                     num_result = is_truthy(right_val);
+                    break;
+                case OP_LOGICAL_XOR:
+                    num_result = is_truthy(left_val) != is_truthy(right_val);
                     break;
                 default:
                     fprintf(stderr, "Error: Unknown binary operator %d.\n", node->data.binary_expr.op);
@@ -370,42 +375,50 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
 }
 
 void execute_var_decl(const VarDeclNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
-    if (node->init_expr->type == NODE_EXPR_LITERAL) {
-        if (node->type == VAR_NUM || node->type == -1) {
-            const double num_val = node->init_expr->data.num_literal.num_val;
-            hashmap_set(scope, &(Variable) {
-                .name = node->name,
-                .type = VAR_NUM,
-                .value = { .num_val = num_val }
-            });
-        } else if (node->type == VAR_STR) {
-            char *str_val = node->init_expr->data.str_literal.str_val;
-            hashmap_set(scope, &(Variable) {
-                .name = node->name,
-                .type = VAR_STR,
-                .value = { .str_val = str_val }
-            });
-        }
-    } else if (node->init_expr->type == NODE_EXPR_BINARY ||
-               node->init_expr->type == NODE_EXPR_VARIABLE ||
-               node->init_expr->type == NODE_FUNC_CALL)
-    {
-        if (node->type == VAR_NUM || node->type == -1) {
-            const double num_val = evaluate_expression(node->init_expr, scope, ret_ctx).value.num_val;
-            hashmap_set(scope, &(Variable) {
-                .name = node->name,
-                .type = VAR_NUM,
-                .value = { .num_val = num_val }
-            });
-        } else if (node->type == VAR_STR) {
-            char *str_val = get_string_value(node->init_expr, scope, ret_ctx);
-            hashmap_set(scope, &(Variable) {
-                .name = node->name,
-                .type = VAR_STR,
-                .value = { .str_val = str_val }
-            });
-        }
+    ReturnContext init_eval_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
+    ReturnValue initial_value_result = evaluate_expression(node->init_expr, scope, &init_eval_ctx);
+
+    if (init_eval_ctx.is_return) {
+        ret_ctx->is_return = 1;
+        ret_ctx->ret_val = init_eval_ctx.ret_val;
+         free_return_value(initial_value_result.type, &initial_value_result);
+        return;
     }
+
+
+    if ((node->type == VAR_NUM || node->type == -1) && initial_value_result.type == RET_NUM) {
+        hashmap_set(scope ? scope : variable_map, &(Variable) {
+            .name = node->name,
+            .type = VAR_NUM,
+            .value = { .num_val = initial_value_result.value.num_val }
+        });
+    } else if (node->type == VAR_STR && initial_value_result.type == RET_STR) {
+        char *str_val_copy = NULL;
+        if (initial_value_result.value.str_val != NULL) {
+            str_val_copy = strdup(initial_value_result.value.str_val);
+            if (!str_val_copy) {
+                 fprintf(stderr, "Error: Memory allocation failed duplicating string for variable '%s'.\n", node->name);
+                 free_return_value(initial_value_result.type, &initial_value_result);
+                 exit(EXIT_FAILURE);
+            }
+        }
+        hashmap_set(scope ? scope : variable_map, &(Variable) {
+            .name = node->name,
+            .type = VAR_STR,
+            .value = { .str_val = str_val_copy }
+        });
+        free_return_value(initial_value_result.type, &initial_value_result);
+    } else {
+        fprintf(stderr, "Error: Type mismatch during declaration of variable '%s'. Expected type %d, but initializer evaluated to type %d.\n",
+                node->name, node->type, initial_value_result.type);
+        free_return_value(initial_value_result.type, &initial_value_result);
+        exit(EXIT_FAILURE);
+    }
+
+     if (hashmap_oom(scope ? scope : variable_map)) {
+         fprintf(stderr, "Error: Out of memory while declaring variable '%s'.\n", node->name);
+         exit(EXIT_FAILURE);
+     }
 }
 
 void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
@@ -723,6 +736,9 @@ int evaluate_condition(ASTNode *condition, struct hashmap *scope) {
                 case OP_LOGICAL_OR:
                     return evaluate_condition(condition->data.binary_expr.left, scope) ||
                         evaluate_condition(condition->data.binary_expr.right, scope);
+                case OP_LOGICAL_XOR:
+                    return evaluate_condition(condition->data.binary_expr.left, scope) !=
+                        evaluate_condition(condition->data.binary_expr.right, scope);
                 default: ;
             }
             break;
@@ -756,35 +772,32 @@ void execute_postfix(const PostfixExprNode *node, struct hashmap *scope) {
 }
 
 void execute_if(const IfNode *if_node, struct hashmap *scope, ReturnContext *ret_ctx) {
-    struct hashmap *if_scope = NULL; // Initialize scope pointer
+    struct hashmap *if_scope = NULL;
 
     ReturnContext condition_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
     ReturnValue condition_result = evaluate_expression(if_node->condition, scope, &condition_ctx);
 
-    // Check if the condition evaluation itself triggered a return
     if (condition_ctx.is_return) {
         ret_ctx->is_return = 1;
-        ret_ctx->ret_val = condition_ctx.ret_val; // Propagate return value
-        // free_return_value(condition_result.type, &condition_result); // condition_result might not be fully initialized if return happened
+        ret_ctx->ret_val = condition_ctx.ret_val;
         return;
     }
 
 
-    int condition_is_true = is_truthy(condition_result);
-    free_return_value(condition_result.type, &condition_result); // Free the result after checking truthiness
+    const int condition_is_true = is_truthy(condition_result);
+    free_return_value(condition_result.type, &condition_result);
 
     if (condition_is_true) {
         if_scope = hashmap_new(sizeof(Variable), 0, 0, 0, variable_hash, variable_compare, NULL, NULL);
         execute(if_node->body, if_scope, ret_ctx);
-        free_function_scope_lists(if_scope); // Clean up scope lists if any were created
+        free_function_scope_lists(if_scope);
         hashmap_free(if_scope);
-        return; // Exit after executing the 'if' body
+        return;
     }
 
-    // --- Check elif conditions ---
     for (int i = 0; i < if_node->elif_count; i++) {
         const ASTNode *elif_node = if_node->elif_nodes[i];
-        condition_ctx.is_return = 0; // Reset return flag for next condition
+        condition_ctx.is_return = 0;
         condition_ctx.ret_val.type = RET_NONE;
 
         ReturnValue elif_condition_result = evaluate_expression(elif_node->data.if_stmt.condition, scope, &condition_ctx);
@@ -792,23 +805,20 @@ void execute_if(const IfNode *if_node, struct hashmap *scope, ReturnContext *ret
          if (condition_ctx.is_return) {
              ret_ctx->is_return = 1;
              ret_ctx->ret_val = condition_ctx.ret_val;
-             // free_return_value(elif_condition_result.type, &elif_condition_result);
              return;
          }
 
-        int elif_condition_is_true = is_truthy(elif_condition_result);
-        free_return_value(elif_condition_result.type, &elif_condition_result); // Free result
+        const int elif_condition_is_true = is_truthy(elif_condition_result);
+        free_return_value(elif_condition_result.type, &elif_condition_result);
 
         if (elif_condition_is_true) {
             if_scope = hashmap_new(sizeof(Variable), 0, 0, 0, variable_hash, variable_compare, NULL, NULL);
             execute(elif_node->data.if_stmt.body, if_scope, ret_ctx);
              free_function_scope_lists(if_scope);
             hashmap_free(if_scope);
-            return; // Exit after executing an 'elif' body
+            return;
         }
     }
-
-    // --- Execute else body ---
     if (if_node->else_body) {
          if_scope = hashmap_new(sizeof(Variable), 0, 0, 0, variable_hash, variable_compare, NULL, NULL);
         execute(if_node->else_body, if_scope, ret_ctx);
@@ -820,54 +830,45 @@ void execute_if(const IfNode *if_node, struct hashmap *scope, ReturnContext *ret
 
 
 void execute_while(const WhileNode *while_node, struct hashmap *scope, ReturnContext *ret_ctx) {
-    struct hashmap *while_scope = NULL; // Defer scope creation until needed
+    struct hashmap *while_scope = NULL;
 
-    while (1) { // Loop indefinitely until condition is false or return occurs
+    while (1) {
         ReturnContext condition_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
         ReturnValue condition_result = evaluate_expression(while_node->condition, scope, &condition_ctx);
 
-         // Check if condition evaluation caused a return
          if (condition_ctx.is_return) {
              ret_ctx->is_return = 1;
              ret_ctx->ret_val = condition_ctx.ret_val;
-             // free_return_value(condition_result.type, &condition_result); // Result might not be set
-             break; // Exit loop
+             break;
          }
 
 
-        int condition_is_true = is_truthy(condition_result);
-        free_return_value(condition_result.type, &condition_result); // Free result
+        const int condition_is_true = is_truthy(condition_result);
+        free_return_value(condition_result.type, &condition_result);
 
         if (!condition_is_true) {
-            break; // Exit loop if condition is false
+            break;
         }
 
-        // Create scope for this iteration if it doesn't exist
-        // Or maybe create a new scope *each* iteration? Depends on desired scoping rules.
-        // Let's create a new scope each time for simplicity, like the 'if' block.
         while_scope = hashmap_new(sizeof(Variable), 0, 0, 0, variable_hash, variable_compare, NULL, NULL);
         if (!while_scope) {
              fprintf(stderr, "Failed to allocate scope for while loop iteration.\n");
-             exit(EXIT_FAILURE); // Or handle error more gracefully
+             exit(EXIT_FAILURE);
         }
 
         execute(while_node->body, while_scope, ret_ctx);
 
-         // Clean up the scope created for this iteration
          free_function_scope_lists(while_scope);
          hashmap_free(while_scope);
-         while_scope = NULL; // Reset for next potential iteration
+         while_scope = NULL;
 
 
         if (ret_ctx->is_return) {
-            break; // Exit loop if body caused a return
+            break;
         }
     }
-     // Clean up scope if loop exited while scope was allocated (e.g., due to return)
-     if (while_scope) {
-         free_function_scope_lists(while_scope);
-         hashmap_free(while_scope);
-     }
+     free_function_scope_lists(while_scope);
+     hashmap_free(while_scope);
 }
 
 void execute_func_decl(const FuncDeclNode *func_decl) {
@@ -909,12 +910,12 @@ ReturnValue execute_function_body(const ASTNode *body, struct hashmap *scope, Re
             case RET_STR:
                 result.value.str_val = ret_ctx->ret_val.value.str_val;
                 result.type = RET_STR;
-                ret_ctx->ret_val.value.str_val = NULL; // Prevent double-free
+                ret_ctx->ret_val.value.str_val = NULL;
                 break;
             case RET_LIST:
                 result.value.list_val = ret_ctx->ret_val.value.list_val;
                 result.type = RET_LIST;
-                ret_ctx->ret_val.value.list_val = NULL; // Prevent double-free
+                ret_ctx->ret_val.value.list_val = NULL;
                 break;
             case RET_NONE:
                 break;

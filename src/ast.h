@@ -42,7 +42,8 @@ typedef enum {
     OP_LESS_EQUAL,
     OP_GREATER_EQUAL,
     OP_LOGICAL_AND,
-    OP_LOGICAL_OR
+    OP_LOGICAL_OR,
+    OP_LOGICAL_XOR
 } BinaryOperator;
 
 typedef enum {

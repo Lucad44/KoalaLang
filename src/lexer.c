@@ -153,6 +153,10 @@ Token next_token(Lexer *lexer) {
             lexer->current_pos++;
             return (Token) {TOKEN_OPERATOR_BITWISE_OR, NULL, 0, NULL, NULL};
         case '^':
+            if (lexer->source[lexer->current_pos + 1] == '^') {
+                lexer->current_pos += 2;
+                return (Token) {TOKEN_OPERATOR_LOGICAL_XOR, NULL, 0, NULL, NULL};
+            }
             lexer->current_pos++;
             return (Token) {TOKEN_OPERATOR_BITWISE_XOR, NULL, 0, NULL, NULL};
         case '(':
