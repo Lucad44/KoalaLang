@@ -9,6 +9,7 @@
 #include "variables.h"
 #include "functions.h"
 #include "memory.h"
+#include "__c_functions.h"
 
 ReturnContextNode* current_return_ctx = NULL;
 
@@ -930,6 +931,135 @@ ReturnValue execute_function_body(const ASTNode *body, struct hashmap *scope, Re
 }
 
 void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, ReturnContext *caller_ret_ctx) {
+    const __C_FunctionMeta *c_func = hashmap_get(__c_functions_meta_map, &(__C_FunctionMeta){.name = func_call->name});
+    if (c_func) {
+        if (func_call->arg_count != c_func->param_count) {
+            fprintf(stderr, "Error: Function %s expects %d arguments, got %d\n",
+                    func_call->name, c_func->param_count, func_call->arg_count);
+            exit(EXIT_FAILURE);
+        }
+
+        void **args = malloc(sizeof(void *) * c_func->param_count);
+        if (!args) {
+            fprintf(stderr, "Error: Memory allocation failed for arguments in function %s\n", func_call->name);
+            exit(EXIT_FAILURE);
+        }
+
+        for (int i = 0; i < c_func->param_count; i++) {
+            ReturnContext arg_eval_ctx = {0};
+            ReturnValue arg_val = evaluate_expression(func_call->arguments[i], scope, &arg_eval_ctx);
+            if (arg_eval_ctx.is_return) {
+                caller_ret_ctx->is_return = 1;
+                caller_ret_ctx->ret_val = arg_eval_ctx.ret_val;
+                free(args);
+                return;
+            }
+
+            __C_DataType param_type = c_func->param_types[i];
+            switch (param_type) {
+                case TYPE_DOUBLE:
+                    if (arg_val.type != RET_NUM) {
+                        fprintf(stderr, "Error: Argument %d to %s must be a number\n", i + 1, func_call->name);
+                        free_return_value(arg_val.type, &arg_val);
+                        free(args);
+                        exit(EXIT_FAILURE);
+                    }
+                    args[i] = malloc(sizeof(double));
+                    *(double *)args[i] = arg_val.value.num_val;
+                    break;
+                case TYPE_STRING:
+                    if (arg_val.type != RET_STR) {
+                        fprintf(stderr, "Error: Argument %d to %s must be a string\n", i + 1, func_call->name);
+                        free_return_value(arg_val.type, &arg_val);
+                        free(args);
+                        exit(EXIT_FAILURE);
+                    }
+                    args[i] = malloc(sizeof(char *));
+                    *(char **)args[i] = strdup(arg_val.value.str_val);
+                    break;
+                default:
+                    fprintf(stderr, "Error: Unsupported parameter type %d in native function %s\n",
+                            param_type, func_call->name);
+                    free_return_value(arg_val.type, &arg_val);
+                    free(args);
+                    exit(EXIT_FAILURE);
+            }
+            free_return_value(arg_val.type, &arg_val);
+        }
+
+        void *ret_out = NULL;
+        switch (c_func->ret_type) {
+            case TYPE_INT:
+                ret_out = malloc(sizeof(int));
+                break;
+            case TYPE_DOUBLE:
+                ret_out = malloc(sizeof(double));
+                break;
+            case TYPE_STRING:
+                ret_out = malloc(sizeof(char *));
+                break;
+            case TYPE_VOID:
+                break;
+            default:
+                fprintf(stderr, "Error: Unsupported return type %d for native function %s\n",
+                        c_func->ret_type, func_call->name);
+                for (int i = 0; i < c_func->param_count; i++) {
+                    free(args[i]);
+                }
+                free(args);
+                exit(EXIT_FAILURE);
+        }
+
+        c_func->dispatcher(c_func->func, args, ret_out);
+
+        if (ret_out == NULL) {
+            fprintf(stderr, "Error: Standard library function %s "
+                            "returned value with unexpected type\n", func_call->name);
+            for (int i = 0; i < c_func->param_count; i++) {
+                free(args[i]);
+            }
+            free(args);
+            exit(EXIT_FAILURE);
+        }
+
+        ReturnValue ret_val;
+        switch (c_func->ret_type) {
+            case TYPE_INT:
+                ret_val.type = RET_NUM;
+                ret_val.value.num_val = *(int *) ret_out;
+                break;
+            case TYPE_DOUBLE:
+                ret_val.type = RET_NUM;
+                ret_val.value.num_val = *(double *) ret_out;
+                break;
+            case TYPE_STRING:
+                ret_val.type = RET_STR;
+                ret_val.value.str_val = strdup(*(char **) ret_out);
+                free(*(char **)ret_out);
+                break;
+            case TYPE_VOID:
+                ret_val.type = RET_NONE;
+                break;
+            default:
+                fprintf(stderr, "Error: Unsupported return type %d for native function %s\n",
+                        c_func->ret_type, func_call->name);
+                exit(EXIT_FAILURE);
+        }
+
+        for (int i = 0; i < c_func->param_count; i++) {
+            if (c_func->param_types[i] == TYPE_STRING) {
+                free(*(char **)args[i]);
+            }
+            free(args[i]);
+        }
+        free(args);
+        free(ret_out);
+
+        caller_ret_ctx->is_return = 1;
+        caller_ret_ctx->ret_val = ret_val;
+        return;
+    }
+
     const Function *function = hashmap_get(function_map, &(Function) { .name = func_call->name });
     if (!function) {
         fprintf(stderr, "Undefined function: %s\n", func_call->name);

@@ -29,7 +29,7 @@ Token next_token(Lexer *lexer) {
         const int start = lexer->current_pos;
         do {
             lexer->current_pos++;
-        } while (isalnum(lexer->source[lexer->current_pos]));
+        } while (isalnum(lexer->source[lexer->current_pos]) || lexer->source[lexer->current_pos] == '_');
 
         const int length = lexer->current_pos - start;
         char *lexeme = safe_malloc(length + 1);

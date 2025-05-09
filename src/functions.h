@@ -15,8 +15,8 @@ extern struct hashmap *function_map;
 
 int function_compare(const void *a, const void *b, void *udata);
 
-bool function_iter(const void *item, void *udata);
-
 uint64_t function_hash(const void *item, uint64_t seed0, uint64_t seed1);
+
+bool function_iter(const void *item, void *udata);
 
 #endif //FUNCTIONS_H

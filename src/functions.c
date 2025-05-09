@@ -15,6 +15,11 @@ int function_compare(const void *a, const void *b, void *udata) {
     return strcmp(fa->name, fb->name);
 }
 
+uint64_t function_hash(const void *item, const uint64_t seed0, const uint64_t seed1) {
+    const Function *function = item;
+    return hashmap_sip(function->name, strlen(function->name), seed0, seed1);
+}
+
 bool function_iter(const void *item, void *udata) {
     const Function *function = item;
     printf("\n%s(", function->name);
@@ -32,9 +37,4 @@ bool function_iter(const void *item, void *udata) {
     }
     printf(")\n");
     return true;
-}
-
-uint64_t function_hash(const void *item, const uint64_t seed0, const uint64_t seed1) {
-    const Function *function = item;
-    return hashmap_sip(function->name, strlen(function->name), seed0, seed1);
 }

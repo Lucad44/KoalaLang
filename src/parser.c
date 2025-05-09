@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "functions.h"
+#include "__c_functions.h"
+
 void init_parser(Parser *parser, Lexer *lexer) {
     parser->lexer = lexer;
     advance(parser);
@@ -466,6 +469,19 @@ ASTNode *parse_function_declaration(Parser *parser) {
         exit(EXIT_FAILURE);
     }
     char *func_name = strdup(parser->current_token.lexeme);
+
+    if (hashmap_get(__c_functions_meta_map, &(__C_FunctionMeta) { .name = func_name }) != NULL) {
+        fprintf(stderr, "Function '%s' already defined in the standard library."
+                        "\nCan't overwrite standard library functions.\n"
+                        "It is possible to see a full list of standard library functions in the documentation.", func_name);
+        exit(EXIT_FAILURE);
+    }
+
+    if (hashmap_get(function_map, &(Function) { .name = func_name }) != NULL) {
+        fprintf(stderr, "Function '%s' already defined\n.", func_name);
+        exit(EXIT_FAILURE);
+    }
+
     advance(parser);
 
     if (parser->current_token.type != TOKEN_LPAREN) {
