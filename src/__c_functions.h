@@ -92,6 +92,36 @@ double __arccos(double n);
 
 double __arctan(double n);
 
+double __arccot(double n);
+
+double __arcsec(double n);
+
+double __arccsc(double n);
+
+double __sinh(double n);
+
+double __cosh(double n);
+
+double __tanh(double n);
+
+double __coth(double n);
+
+double __sech(double n);
+
+double __csch(double n);
+
+double __arcsinh(double n);
+
+double __arccosh(double n);
+
+double __arctanh(double n);
+
+double __arccoth(double n);
+
+double __arcsech(double n);
+
+double __arccsch(double n);
+
 void dispatch_double_to_int(void *func_ptr, void **args, void *ret_out);
 
 void dispatch_double_to_double(void *func_ptr, void **args, void *ret_out);

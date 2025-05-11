@@ -81,6 +81,23 @@ static void __attribute__((constructor)) init___c_function_meta_map() {
        .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1});
     hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arctan", .func = (void *) __arctan,
        .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1});
+    hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arccot", .func = (void *) __arccot,
+       .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1});
+    hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arcsec", .func = (void *) __arcsec,
+           .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1});
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arccsc", .func = (void *) __arccsc, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "sinh", .func = (void *) __sinh, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "cosh", .func = (void *) __cosh, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "tanh", .func = (void *) __tanh, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "coth", .func = (void *) __coth, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "sech", .func = (void *) __sech, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "csch", .func = (void *) __csch, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arcsinh", .func = (void *) __arcsinh, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arccosh", .func = (void *) __arccosh, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arctanh", .func = (void *) __arctanh, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arccoth", .func = (void *) __arccoth, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arcsech", .func = (void *) __arcsech, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arccsch", .func = (void *) __arccsch, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
 }
 
 int __c_function_meta_compare(const void *a, const void *b, void *udata) {
@@ -277,40 +294,136 @@ double __cos(const double n) {
     return cos(n);
 }
 
-double __tan(double n) {
+double __tan(const double n) {
     return tan(n);
 }
 
-double __cot(double n) {
+double __cot(const double n) {
     return 1.0 / tan(n);
 }
 
-double __sec(double n) {
+double __sec(const double n) {
     return 1.0 / cos(n);
 }
 
-double __csc(double n) {
+double __csc(const double n) {
     return 1.0 / sin(n);
 }
 
-double __arcsin(double n) {
+double __arcsin(const double n) {
     if (n < -1 || n > 1) {
-        fprintf(stderr, "Error: arcsin argument must be between -1 and 1.\n");
+        fprintf(stderr, "Error: arcsin argument must be in the range [−1,1].\n");
         exit(EXIT_FAILURE);
     }
     return asin(n);
 }
 
-double __arccos(double n) {
+double __arccos(const double n) {
     if (n < -1 || n > 1) {
-        fprintf(stderr, "Error: arccos argument must be between -1 and 1.\n");
+        fprintf(stderr, "Error: arccos argument must be in the range [−1,1].\n");
         exit(EXIT_FAILURE);
     }
     return acos(n);
 }
 
-double __arctan(double n) {
+double __arctan(const double n) {
     return atan(n);
+}
+
+double __arccot(const double n) {
+    return atan(1.0 / n);
+}
+
+double __arcsec(const double n) {
+    if (n > -1 && n < 1) {
+        fprintf(stderr, "Error: arcsec argument must be in the range (−inf,−1]U[1,+inf).\n");
+        exit(EXIT_FAILURE);
+    }
+    return acos(1.0 / n);
+}
+
+double __arccsc(const double n) {
+    if (n > -1 && n < 1) {
+        fprintf(stderr, "Error: arccsc argument must be in the range (−inf,−1]U[1,+inf).\n");
+        exit(EXIT_FAILURE);
+    }
+    return asin(1.0 / n);
+}
+
+double __sinh(const double n) {
+    return sinh(n);
+}
+
+double __cosh(const double n) {
+    return cosh(n);
+}
+
+double __tanh(const double n) {
+    return tanh(n);
+}
+
+double __coth(const double n) {
+    if (n == 0) {
+        fprintf(stderr, "Error: coth argument must be in the range (−inf,0)U(0,+inf).\n");
+        exit(EXIT_FAILURE);
+    }
+    return 1.0 / tanh(n);
+}
+
+double __sech(const double n) {
+    return 1.0 / cosh(n);
+}
+
+double __csch(const double n) {
+    if (n == 0) {
+        fprintf(stderr, "Error: csch argument must be in the range (−inf,0)U(0,+inf).\n");
+        exit(EXIT_FAILURE);
+    }
+    return 1.0 / sinh(n);
+}
+
+double __arcsinh(const double n) {
+    return asinh(n);
+}
+
+double __arccosh(const double n) {
+    if (n < 1) {
+        fprintf(stderr, "Error: arccosh argument must be in the range [1,+inf).\n");
+        exit(EXIT_FAILURE);
+    }
+    return acosh(n);
+}
+
+double __arctanh(const double n) {
+    if (n <= -1 || n >= 1) {
+        fprintf(stderr, "Error: arctanh argument must be in the range (−1,1).\n");
+        exit(EXIT_FAILURE);
+    }
+    return atanh(n);
+}
+
+double __arccoth(const double n) {
+    if (n >= -1 && n <= 1) {
+        fprintf(stderr, "Error: arccoth argument must be in the range (−inf,−1)U(1,+inf).\n");
+        exit(EXIT_FAILURE);
+    }
+    return atanh(1.0 / n);
+}
+
+double __arcsech(const double n) {
+    if (n <= 0 || n > 1) {
+        fprintf(stderr, "Error: arcsech argument must be in the range (0,1].\n");
+        exit(EXIT_FAILURE);
+    }
+    return acosh(1.0 / n);
+}
+
+double __arccsch(const double n) {
+    if (n > -1 && n < 1)  {
+        fprintf(stderr, "Error: arccsch argument must be in the range (−inf,−1]U[1,+inf).\n");
+        exit(EXIT_FAILURE);
+    }
+    return asinh(1.0 / n);
 }
 
 void dispatch_double_to_int(void *func_ptr, void **args, void *ret_out) {
