@@ -45,12 +45,12 @@ ASTNode *parse_primary(Parser *parser) {
             return expr;
         }
         case TOKEN_NUMBER:
-            node->type = NODE_EXPR_LITERAL;
+            node->type = NODE_NUM_LITERAL;
             node->data.num_literal.num_val = parser->current_token.num_value;
             advance(parser);
             break;
         case TOKEN_STRING:
-            node->type = NODE_EXPR_LITERAL;
+            node->type = NODE_STR_LITERAL;
             node->data.str_literal.str_val = strdup(parser->current_token.str_value);
             advance(parser);
             break;
@@ -104,7 +104,7 @@ ASTNode *parse_primary(Parser *parser) {
                 ASTNode *index_expr = parse_expression(parser);
 
                 if (parser->current_token.type != TOKEN_RBRACKET) {
-                    fprintf(stderr, "Error: Expected ']' after list index expression.\n");
+                    fprintf(stderr, "\nError: Expected ']' after list index expression.\n");
 
                     exit(EXIT_FAILURE);
                 }
@@ -643,7 +643,7 @@ ASTNode *parse_return(Parser* parser) {
     advance(parser);
     ASTNode *expr = parse_expression(parser);
     if (parser->current_token.type != TOKEN_SEMICOLON) {
-        fprintf(stderr, "Error: Expected semicolon after return statement\n");
+        fprintf(stderr, "\nError: Expected semicolon after return statement\n");
         exit(EXIT_FAILURE);
     }
     advance(parser);
@@ -709,7 +709,7 @@ ASTNode *parse_program(Parser *parser) {
 ASTNode *parse_list_literal(Parser *parser, VarType expected_element_type) {
     if (parser->current_token.type != TOKEN_LBRACKET) {
 
-        fprintf(stderr, "Internal Parser Error: Expected '[' for list literal.\n");
+        fprintf(stderr, "Internal Parser \nError: Expected '[' for list literal.\n");
         exit(EXIT_FAILURE);
     }
     advance(parser);
@@ -717,13 +717,13 @@ ASTNode *parse_list_literal(Parser *parser, VarType expected_element_type) {
     int element_count = 0;
     while (parser->current_token.type != TOKEN_RBRACKET) {
         ASTNode *element_expr = parse_expression(parser);
-        if (expected_element_type == VAR_NUM && element_expr->type != NODE_EXPR_LITERAL  && element_expr->type != NODE_EXPR_VARIABLE && element_expr->type != NODE_EXPR_BINARY) {
-             fprintf(stderr, "Error: Expected numeric literal or expression for num list element, got node type %d.\n", element_expr->type);
+        if (expected_element_type == VAR_NUM && element_expr->type != NODE_NUM_LITERAL  && element_expr->type != NODE_EXPR_VARIABLE && element_expr->type != NODE_EXPR_BINARY) {
+             fprintf(stderr, "\nError: Expected numeric literal or expression for num list element, got node type %d.\n", element_expr->type);
 
              exit(EXIT_FAILURE);
         }
-        if (expected_element_type == VAR_STR && element_expr->type != NODE_EXPR_LITERAL  && element_expr->type != NODE_EXPR_VARIABLE ) {
-            fprintf(stderr, "Error: Expected string literal or variable for str list element, got node type %d.\n", element_expr->type);
+        if (expected_element_type == VAR_STR && element_expr->type != NODE_STR_LITERAL  && element_expr->type != NODE_EXPR_VARIABLE ) {
+            fprintf(stderr, "\nError: Expected string literal or variable for str list element, got node type %d.\n", element_expr->type);
 
             exit(EXIT_FAILURE);
         }
@@ -819,13 +819,13 @@ ASTNode *parse_list_declaration(Parser *parser) {
 ASTNode *parse_expression_statement(Parser *parser) {
      if (parser->current_token.type != TOKEN_IDENTIFIER) {
 
-        fprintf(stderr, "Internal Parser Error: Expected identifier.\n");
+        fprintf(stderr, "Internal Parser \nError: Expected identifier.\n");
         exit(EXIT_FAILURE);
     }
 
     char *target_name = strdup(parser->current_token.lexeme);
     if (!target_name) {
-         fprintf(stderr, "Error: Memory allocation failed for identifier name.\n");
+         fprintf(stderr, "\nError: Memory allocation failed for identifier name.\n");
          exit(EXIT_FAILURE);
     }
     advance(parser);
@@ -835,14 +835,14 @@ ASTNode *parse_expression_statement(Parser *parser) {
             advance(parser);
             ASTNode *index_expr = parse_expression(parser);
             if (parser->current_token.type != TOKEN_RBRACKET) {
-                fprintf(stderr, "Error: Expected ']' after list index in assignment target.\n");
+                fprintf(stderr, "\nError: Expected ']' after list index in assignment target.\n");
                 free(target_name);
                 free_ast(index_expr);
                 exit(EXIT_FAILURE);
             }
             advance(parser);
             if (parser->current_token.type != TOKEN_OPERATOR_EQUAL) {
-                 fprintf(stderr, "Error: Expected '=' after list index target '[]' in assignment.\n");
+                 fprintf(stderr, "\nError: Expected '=' after list index target '[]' in assignment.\n");
                  free(target_name);
                  free_ast(index_expr);
                  exit(EXIT_FAILURE);
@@ -878,14 +878,14 @@ ASTNode *parse_expression_statement(Parser *parser) {
             break;
         }
         default:
-            fprintf(stderr, "Error: Unexpected token '%s' after identifier '%s' in statement.\n",
+            fprintf(stderr, "\nError: Unexpected token '%s' after identifier '%s' in statement.\n",
                     parser->current_token.lexeme ? parser->current_token.lexeme : "(unknown)",
                     target_name);
             free(target_name);
             exit(EXIT_FAILURE);
     }
     if (parser->current_token.type != TOKEN_SEMICOLON) {
-        fprintf(stderr, "Error: Expected ';' after statement.\n");
+        fprintf(stderr, "\nError: Expected ';' after statement.\n");
         free_ast(node);
         exit(EXIT_FAILURE);
     }

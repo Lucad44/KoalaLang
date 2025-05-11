@@ -68,7 +68,7 @@ Token next_token(Lexer *lexer) {
             lexer->current_pos++;
         }
         if (lexer->source[lexer->current_pos] != '"') {
-            fprintf(stderr, "Error: Unterminated string literal\n");
+            fprintf(stderr, "\nError: Unterminated string literal\n");
             exit(EXIT_FAILURE);
         }
         const int length = lexer->current_pos - start;
@@ -184,7 +184,7 @@ Token next_token(Lexer *lexer) {
             lexer->current_pos++;
             return (Token) {TOKEN_COMMA, NULL, 0, NULL, NULL};
         default:
-            fprintf(stderr, "Error: Unexpected character '%c' (ASCII %d)\n", current, current);
+            fprintf(stderr, "\nError: Unexpected character '%c' (ASCII %d)\n", current, current);
             exit(EXIT_FAILURE);
     }
 }

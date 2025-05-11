@@ -51,10 +51,8 @@ void free_ast(void *node) {
             }
         free(ast_node->data.block.statements);
             break;
-        case NODE_EXPR_LITERAL:
-            if (ast_node->data.str_literal.str_val) {
-                free(ast_node->data.str_literal.str_val);
-            }
+        case NODE_STR_LITERAL:
+            free(ast_node->data.str_literal.str_val);
             break;
         case NODE_EXPR_VARIABLE:
             free(ast_node->data.variable.name);

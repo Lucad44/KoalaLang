@@ -98,16 +98,19 @@ static void execute_block(const BlockNode *block, struct hashmap *scope, ReturnC
 
 ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
     if (node == NULL) {
-        fprintf(stderr, "Error: Trying to evaluate a NULL expression node.\n");
+        fprintf(stderr, "\nError: Trying to evaluate a NULL expression node.\n");
         exit(EXIT_FAILURE);
     }
     ReturnValue result = { .type = RET_NONE };
     switch (node->type) {
-        case NODE_EXPR_LITERAL:
+        case NODE_NUM_LITERAL:
             result.type = RET_NUM;
             result.value.num_val = node->data.num_literal.num_val;
             break;
-
+        case NODE_STR_LITERAL:
+            result.type = RET_STR;
+            result.value.str_val = node->data.str_literal.str_val;
+            break;
         case NODE_EXPR_VARIABLE: {
             const Variable *variable = get_variable(scope, node->data.variable.name);
             if (!variable) {
@@ -141,7 +144,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                 if (operand_ctx.ret_val.type == RET_NUM) {
                     operand_value.value.num_val = operand_ctx.ret_val.value.num_val;
                 } else {
-                    fprintf(stderr, "Error: Cannot apply unary minus to non-numeric return value.\n");
+                    fprintf(stderr, "\nError: Cannot apply unary minus to non-numeric return value.\n");
                     exit(EXIT_FAILURE);
                 }
             }
@@ -156,7 +159,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                     result.value.num_val = !is_truthy(operand_value);
                     break;
                 default:
-                    fprintf(stderr, "Error: Unknown unary operator %d.\n", unary_node->op);
+                    fprintf(stderr, "\nError: Unknown unary operator %d.\n", unary_node->op);
                     exit(EXIT_FAILURE);
             }
             break;
@@ -183,7 +186,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                 node->data.binary_expr.op != OP_LOGICAL_XOR)
             {
                  if (left_val.type != RET_NUM || right_val.type != RET_NUM) {
-                      fprintf(stderr, "Error: Binary operator %d requires numeric operands (got types %d and %d).\n",
+                      fprintf(stderr, "\nError: Binary operator %d requires numeric operands (got types %d and %d).\n",
                               node->data.binary_expr.op, left_val.type, right_val.type);
                       free_return_value(left_val.type, &left_val);
                       free_return_value(right_val.type, &right_val);
@@ -206,13 +209,13 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                     break;
                 case OP_DIVIDE:
                     if (right_val.value.num_val == 0) {
-                        fprintf(stderr, "Error: Division by zero\n"); exit(EXIT_FAILURE);
+                        fprintf(stderr, "\nError: Division by zero\n"); exit(EXIT_FAILURE);
                     }
                     num_result = left_val.value.num_val / right_val.value.num_val;
                     break;
                 case OP_MODULO:
                      if ((long long) right_val.value.num_val == 0) {
-                         fprintf(stderr, "Error: Modulo by zero\n"); exit(EXIT_FAILURE);
+                         fprintf(stderr, "\nError: Modulo by zero\n"); exit(EXIT_FAILURE);
                      }
                      num_result = (double)((long long)left_val.value.num_val % (long long)right_val.value.num_val);
                     break;
@@ -254,7 +257,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                     num_result = is_truthy(left_val) != is_truthy(right_val);
                     break;
                 default:
-                    fprintf(stderr, "Error: Unknown binary operator %d.\n", node->data.binary_expr.op);
+                    fprintf(stderr, "\nError: Unknown binary operator %d.\n", node->data.binary_expr.op);
                     free_return_value(left_val.type, &left_val);
                     free_return_value(right_val.type, &right_val);
                     exit(EXIT_FAILURE);
@@ -269,7 +272,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
         case NODE_FUNC_CALL:
             execute_func_call(&node->data.func_call, scope, ret_ctx);
             if (ret_ctx->ret_val.type == RET_NONE) {
-                fprintf(stderr, "Error: Function call returned no value.\n");
+                fprintf(stderr, "\nError: Function call returned no value.\n");
                 exit(EXIT_FAILURE);
             }
             result.type = ret_ctx->ret_val.type;
@@ -280,11 +283,11 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             const ListAccessNode *access_node = &node->data.list_access;
             Variable *list_var = get_variable(scope, access_node->list_name);
             if (!list_var) {
-                fprintf(stderr, "Error: List variable '%s' not found.\n", access_node->list_name);
+                fprintf(stderr, "\nError: List variable '%s' not found.\n", access_node->list_name);
                 exit(EXIT_FAILURE);
             }
             if (list_var->type != VAR_LIST) {
-                fprintf(stderr, "Error: Variable '%s' is not a list.\n", access_node->list_name);
+                fprintf(stderr, "\nError: Variable '%s' is not a list.\n", access_node->list_name);
                 exit(EXIT_FAILURE);
             }
             int list_size = 0;
@@ -296,7 +299,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             ReturnContext index_eval_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
             const double index_val_double = evaluate_expression(access_node->index_expr, scope, &index_eval_ctx).value.num_val;
             if (index_val_double != floor(index_val_double)) {
-                 fprintf(stderr, "Error: List index for '%s' must be an integer, got %f.\n",
+                 fprintf(stderr, "\nError: List index for '%s' must be an integer, got %f.\n",
                          access_node->list_name, index_val_double);
                  exit(EXIT_FAILURE);
             }
@@ -306,7 +309,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                 index = list_size + index;
             }
             if (index < 0 || index >= list_size) {
-                fprintf(stderr, "Error: List index %d (calculated from %f) out of bounds for list '%s' of size %d.\n",
+                fprintf(stderr, "\nError: List index %d (calculated from %f) out of bounds for list '%s' of size %d.\n",
                         index, index_val_double, access_node->list_name, list_size);
                 exit(EXIT_FAILURE);
             }
@@ -322,7 +325,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                     result.type = RET_NUM;
                     result.value.num_val = current->element.value.num_val;
                 } else {
-                    fprintf(stderr, "Internal Error: List '%s' element type mismatch at index %d.\n", access_node->list_name, index);
+                    fprintf(stderr, "Internal \nError: List '%s' element type mismatch at index %d.\n", access_node->list_name, index);
                     exit(EXIT_FAILURE);
                 }
             } else if (list_var->value.list_val.element_type == VAR_STR) {
@@ -330,11 +333,11 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                     result.type = RET_STR;
                     result.value.str_val = current->element.value.str_val;
                 } else {
-                    fprintf(stderr, "Internal Error: List '%s' element type mismatch at index %d.\n", access_node->list_name, index);
+                    fprintf(stderr, "Internal \nError: List '%s' element type mismatch at index %d.\n", access_node->list_name, index);
                     exit(EXIT_FAILURE);
                 }
             } else {
-                fprintf(stderr, "Internal Error: Unknown list element type for '%s'.\n", access_node->list_name);
+                fprintf(stderr, "Internal \nError: Unknown list element type for '%s'.\n", access_node->list_name);
                 exit(EXIT_FAILURE);
             }
             break;
@@ -344,12 +347,12 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             Variable *variable = get_variable(scope, postfix_node->var_name);
 
             if (!variable) {
-                fprintf(stderr, "Error: Undefined variable '%s' in postfix operation.\n", postfix_node->var_name);
+                fprintf(stderr, "\nError: Undefined variable '%s' in postfix operation.\n", postfix_node->var_name);
                 exit(EXIT_FAILURE);
             }
 
             if (variable->type != VAR_NUM) {
-                fprintf(stderr, "Error: Cannot apply postfix operator to non-numeric variable '%s'.\n", postfix_node->var_name);
+                fprintf(stderr, "\nError: Cannot apply postfix operator to non-numeric variable '%s'.\n", postfix_node->var_name);
                 exit(EXIT_FAILURE);
             }
 
@@ -369,7 +372,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             break;
         }
         default:
-            fprintf(stderr, "Error: Unknown node type: %d.\n", node->type);
+            fprintf(stderr, "\nError: Unknown node type: %d.\n", node->type);
             exit(EXIT_FAILURE);
     }
     return result;
@@ -398,7 +401,7 @@ void execute_var_decl(const VarDeclNode *node, struct hashmap *scope, ReturnCont
         if (initial_value_result.value.str_val != NULL) {
             str_val_copy = strdup(initial_value_result.value.str_val);
             if (!str_val_copy) {
-                 fprintf(stderr, "Error: Memory allocation failed duplicating string for variable '%s'.\n", node->name);
+                 fprintf(stderr, "\nError: Memory allocation failed duplicating string for variable '%s'.\n", node->name);
                  free_return_value(initial_value_result.type, &initial_value_result);
                  exit(EXIT_FAILURE);
             }
@@ -410,14 +413,14 @@ void execute_var_decl(const VarDeclNode *node, struct hashmap *scope, ReturnCont
         });
         free_return_value(initial_value_result.type, &initial_value_result);
     } else {
-        fprintf(stderr, "Error: Type mismatch during declaration of variable '%s'. Expected type %d, but initializer evaluated to type %d.\n",
+        fprintf(stderr, "\nError: Type mismatch during declaration of variable '%s'. Expected type %d, but initializer evaluated to type %d.\n",
                 node->name, node->type, initial_value_result.type);
         free_return_value(initial_value_result.type, &initial_value_result);
         exit(EXIT_FAILURE);
     }
 
      if (hashmap_oom(scope ? scope : variable_map)) {
-         fprintf(stderr, "Error: Out of memory while declaring variable '%s'.\n", node->name);
+         fprintf(stderr, "\nError: Out of memory while declaring variable '%s'.\n", node->name);
          exit(EXIT_FAILURE);
      }
 }
@@ -430,7 +433,7 @@ void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnCo
         const ListLiteralNode *literal = &node->init_expr->data.list_literal;
 
         if (literal->element_type != node->element_type) {
-            fprintf(stderr, "Error: List literal type mismatch for variable '%s'. Expected %d, got %d.\n",
+            fprintf(stderr, "\nError: List literal type mismatch for variable '%s'. Expected %d, got %d.\n",
                     node->name, node->element_type, literal->element_type);
             exit(EXIT_FAILURE);
         }
@@ -444,19 +447,19 @@ void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnCo
             } else if (element.type == VAR_STR) {
                 element.value.str_val = get_string_value(literal->elements[i], scope, ret_ctx);
                 if (!element.value.str_val) {
-                     fprintf(stderr, "Error: Failed to evaluate string element %d for list '%s'.\n", i, node->name);
+                     fprintf(stderr, "\nError: Failed to evaluate string element %d for list '%s'.\n", i, node->name);
                      free_list(head);
                      exit(EXIT_FAILURE);
                  }
             } else {
-                 fprintf(stderr, "Internal Error: Invalid element type %d in list literal for '%s'.\n", element.type, node->name);
+                 fprintf(stderr, "Internal \nError: Invalid element type %d in list literal for '%s'.\n", element.type, node->name);
                  free_list(head);
                  exit(EXIT_FAILURE);
             }
 
             ListNode *new_node = create_list_node(element);
              if (!new_node) {
-                  fprintf(stderr, "Error: Failed to allocate memory for list node for '%s'.\n", node->name);
+                  fprintf(stderr, "\nError: Failed to allocate memory for list node for '%s'.\n", node->name);
                   free_list(head);
                   if (element.type == VAR_STR) free(element.value.str_val);
                   exit(EXIT_FAILURE);
@@ -478,7 +481,7 @@ void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnCo
         .value = { .list_val = { .element_type = node->element_type, .head = head } }
     };
      if (!new_list_var.name) {
-         fprintf(stderr, "Error: Failed to allocate memory for list variable name '%s'.\n", node->name);
+         fprintf(stderr, "\nError: Failed to allocate memory for list variable name '%s'.\n", node->name);
          free_list(head);
          exit(EXIT_FAILURE);
      }
@@ -486,7 +489,7 @@ void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnCo
     hashmap_set(scope, &new_list_var);
 
     if (hashmap_oom(scope ? scope : variable_map)) {
-         fprintf(stderr, "Error: Out of memory while storing list variable '%s'.\n", node->name);
+         fprintf(stderr, "\nError: Out of memory while storing list variable '%s'.\n", node->name);
          free(new_list_var.name);
          free_list(head);
          exit(EXIT_FAILURE);
@@ -497,12 +500,12 @@ void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnCo
 char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
     char buffer[1024];
     switch (node->type) {
-        case NODE_EXPR_LITERAL: {
-            if (node->data.str_literal.str_val) {
-                return strdup(node->data.str_literal.str_val);
-            }
+        case NODE_NUM_LITERAL: {
             snprintf(buffer, sizeof(buffer), "%g", node->data.num_literal.num_val);
             return strdup(buffer);
+        }
+        case NODE_STR_LITERAL: {
+            return strdup(node->data.str_literal.str_val);
         }
         case NODE_EXPR_VARIABLE: {
             const Variable *variable = get_variable(scope, node->data.variable.name);
@@ -542,21 +545,21 @@ char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext
                     }
                     case RET_LIST: {
                         char *list_str = list_to_string(local_ret_ctx.ret_val.value.list_val, VAR_NUM);
-                        return list_str ? list_str : strdup("[Error: Failed to convert list]");
+                        return list_str ? list_str : strdup("[\nError: Failed to convert list]");
                     }
                     default:
-                        fprintf(stderr, "Error: Unsupported return type in string context.\n");
+                        fprintf(stderr, "\nError: Unsupported return type in string context.\n");
                     exit(EXIT_FAILURE);
                 }
             }
-            fprintf(stderr, "Error: Function call did not return a value in string context.\n");
+            fprintf(stderr, "\nError: Function call did not return a value in string context.\n");
             exit(EXIT_FAILURE);
         }
         case NODE_LIST_ACCESS: {
             const ListAccessNode *access_node = &node->data.list_access;
             Variable *list_var = get_variable(scope, access_node->list_name);
              if (!list_var || list_var->type != VAR_LIST) {
-                 fprintf(stderr, "Error: List variable '%s' not found or is not a list.\n", access_node->list_name);
+                 fprintf(stderr, "\nError: List variable '%s' not found or is not a list.\n", access_node->list_name);
                  exit(EXIT_FAILURE);
              }
 
@@ -570,7 +573,7 @@ char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext
              ReturnContext index_eval_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
             const double index_val_double = evaluate_expression(access_node->index_expr, scope, &index_eval_ctx).value.num_val;
              if (index_val_double != floor(index_val_double)) {
-                  fprintf(stderr, "Error: List index must be an integer.\n");
+                  fprintf(stderr, "\nError: List index must be an integer.\n");
                  exit(EXIT_FAILURE);
              }
              int index = (int) index_val_double;
@@ -580,7 +583,7 @@ char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext
              }
 
              if (index < 0 || index >= list_size) {
-                 fprintf(stderr, "Error: List index out of bounds.\n");
+                 fprintf(stderr, "\nError: List index out of bounds.\n");
                  exit(EXIT_FAILURE);
              }
 
@@ -598,14 +601,12 @@ char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext
              if (current->element.type == VAR_STR) {
                 return strdup(current->element.value.str_val ? current->element.value.str_val : "");
              }
-            fprintf(stderr, "Error: unknown list element type.\n");
+            fprintf(stderr, "\nError: unknown list element type.\n");
             exit(EXIT_FAILURE);
         }
         default: {
-            // TODO: REMOVE/MODIF THIS SECTIOn
-            const double ret = evaluate_expression(node, scope, ret_ctx).value.num_val;
-            snprintf(buffer, sizeof(buffer), "%g", ret);
-            return strdup(buffer);
+            fprintf(stderr, "\nError: Unsupported node type in string context.\n");
+            exit(EXIT_FAILURE);
         }
     }
 }
@@ -613,14 +614,14 @@ char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext
 void execute_print(const PrintNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
     char *result = strdup("");
     if (!result) {
-        fprintf(stderr, "Error: Memory allocation failed in print.\n");
+        fprintf(stderr, "\nError: Memory allocation failed in print.\n");
         return;
     }
 
     for (int i = 0; i < node->expr_count; i++) {
         char *part = get_string_value(node->expr_list[i], scope, ret_ctx);
         if (!part) {
-            fprintf(stderr, "Error: Failed to get string value for print argument %d.\n", i + 1);
+            fprintf(stderr, "\nError: Failed to get string value for print argument %d.\n", i + 1);
             continue;
         }
 
@@ -629,7 +630,7 @@ void execute_print(const PrintNode *node, struct hashmap *scope, ReturnContext *
         char *new_result = safe_realloc(result, current_len + part_len + 1);
 
         if (!new_result) {
-            fprintf(stderr, "Error: Memory reallocation failed during print concatenation.\n");
+            fprintf(stderr, "\nError: Memory reallocation failed during print concatenation.\n");
             free(result);
             free(part);
             return;
@@ -690,7 +691,7 @@ int evaluate_condition(ASTNode *condition, struct hashmap *scope) {
     if (!condition) return 0;
 
     switch (condition->type) {
-        case NODE_EXPR_LITERAL:
+        case NODE_NUM_LITERAL:
             return condition->data.num_literal.num_val != 0;
 
         case NODE_EXPR_VARIABLE: {
@@ -704,14 +705,14 @@ int evaluate_condition(ASTNode *condition, struct hashmap *scope) {
         case NODE_EXPR_BINARY: {
             double left = 0, right = 0;
 
-            if (condition->data.binary_expr.left->type == NODE_EXPR_LITERAL) {
+            if (condition->data.binary_expr.left->type == NODE_NUM_LITERAL) {
                 left = condition->data.binary_expr.left->data.num_literal.num_val;
             } else if (condition->data.binary_expr.left->type == NODE_EXPR_VARIABLE) {
                 const Variable *variable = get_variable(scope, condition->data.binary_expr.left->data.variable.name);
                 if (variable && variable->type == VAR_NUM) left = variable->value.num_val;
             }
 
-            if (condition->data.binary_expr.right->type == NODE_EXPR_LITERAL) {
+            if (condition->data.binary_expr.right->type == NODE_NUM_LITERAL) {
                 right = condition->data.binary_expr.right->data.num_literal.num_val;
             } else if (condition->data.binary_expr.right->type == NODE_EXPR_VARIABLE) {
                 const Variable *variable = get_variable(scope, condition->data.binary_expr.right->data.variable.name);
@@ -921,7 +922,7 @@ ReturnValue execute_function_body(const ASTNode *body, struct hashmap *scope, Re
             case RET_NONE:
                 break;
             default:
-                fprintf(stderr, "Internal Error: Unknown return type %d in execute_function_body.\n", ret_ctx->ret_val.type);
+                fprintf(stderr, "Internal \nError: Unknown return type %d in execute_function_body.\n", ret_ctx->ret_val.type);
             exit(EXIT_FAILURE);
         }
     }
@@ -934,14 +935,14 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
     const __C_FunctionMeta *c_func = hashmap_get(__c_functions_meta_map, &(__C_FunctionMeta){.name = func_call->name});
     if (c_func) {
         if (func_call->arg_count != c_func->param_count) {
-            fprintf(stderr, "Error: Function %s expects %d arguments, got %d\n",
+            fprintf(stderr, "\nError: Function %s expects %d arguments, got %d\n",
                     func_call->name, c_func->param_count, func_call->arg_count);
             exit(EXIT_FAILURE);
         }
 
         void **args = malloc(sizeof(void *) * c_func->param_count);
         if (!args) {
-            fprintf(stderr, "Error: Memory allocation failed for arguments in function %s\n", func_call->name);
+            fprintf(stderr, "\nError: Memory allocation failed for arguments in function %s\n", func_call->name);
             exit(EXIT_FAILURE);
         }
 
@@ -959,7 +960,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
             switch (param_type) {
                 case TYPE_DOUBLE:
                     if (arg_val.type != RET_NUM) {
-                        fprintf(stderr, "Error: Argument %d to %s must be a number\n", i + 1, func_call->name);
+                        fprintf(stderr, "\nError: Argument %d to %s must be a number\n", i + 1, func_call->name);
                         free_return_value(arg_val.type, &arg_val);
                         free(args);
                         exit(EXIT_FAILURE);
@@ -969,7 +970,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                     break;
                 case TYPE_STRING:
                     if (arg_val.type != RET_STR) {
-                        fprintf(stderr, "Error: Argument %d to %s must be a string\n", i + 1, func_call->name);
+                        fprintf(stderr, "\nError: Argument %d to %s must be a string\n", i + 1, func_call->name);
                         free_return_value(arg_val.type, &arg_val);
                         free(args);
                         exit(EXIT_FAILURE);
@@ -978,7 +979,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                     *(char **)args[i] = strdup(arg_val.value.str_val);
                     break;
                 default:
-                    fprintf(stderr, "Error: Unsupported parameter type %d in native function %s\n",
+                    fprintf(stderr, "\nError: Unsupported parameter type %d in native function %s\n",
                             param_type, func_call->name);
                     free_return_value(arg_val.type, &arg_val);
                     free(args);
@@ -1001,7 +1002,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
             case TYPE_VOID:
                 break;
             default:
-                fprintf(stderr, "Error: Unsupported return type %d for native function %s\n",
+                fprintf(stderr, "\nError: Unsupported return type %d for native function %s\n",
                         c_func->ret_type, func_call->name);
                 for (int i = 0; i < c_func->param_count; i++) {
                     free(args[i]);
@@ -1013,7 +1014,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
         c_func->dispatcher(c_func->func, args, ret_out);
 
         if (ret_out == NULL) {
-            fprintf(stderr, "Error: Standard library function %s "
+            fprintf(stderr, "\nError: Standard library function %s "
                             "returned value with unexpected type\n", func_call->name);
             for (int i = 0; i < c_func->param_count; i++) {
                 free(args[i]);
@@ -1041,7 +1042,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                 ret_val.type = RET_NONE;
                 break;
             default:
-                fprintf(stderr, "Error: Unsupported return type %d for native function %s\n",
+                fprintf(stderr, "\nError: Unsupported return type %d for native function %s\n",
                         c_func->ret_type, func_call->name);
                 exit(EXIT_FAILURE);
         }
@@ -1109,7 +1110,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                              exit(EXIT_FAILURE);
                          }
                      } else {
-                          fprintf(stderr, "Internal Error: Unsupported list element type %d for parameter '%s' in function '%s'.\n",
+                          fprintf(stderr, "Internal \nError: Unsupported list element type %d for parameter '%s' in function '%s'.\n",
                                   list_element_type, param->name, func_call->name);
                          free_list(list_to_pass_head);
                          free_function_scope_lists(function_scope);
@@ -1119,7 +1120,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
 
                      ListNode *new_node = create_list_node(element);
                       if (!new_node) {
-                           fprintf(stderr, "Error: Failed to allocate memory for list node from literal for function '%s'.\n", func_call->name);
+                           fprintf(stderr, "\nError: Failed to allocate memory for list node from literal for function '%s'.\n", func_call->name);
                            if (list_element_type == VAR_STR && element.value.str_val) free(element.value.str_val);
                            free_list(list_to_pass_head);
                            free_function_scope_lists(function_scope);
@@ -1140,21 +1141,21 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                  Variable *list_var_caller = get_variable(scope, list_arg_name);
 
                  if (!list_var_caller) {
-                     fprintf(stderr, "Error: List variable '%s' (argument %d for function '%s') not found in caller scope.\n",
+                     fprintf(stderr, "\nError: List variable '%s' (argument %d for function '%s') not found in caller scope.\n",
                               list_arg_name, i + 1, func_call->name);
                      free_function_scope_lists(function_scope);
                      hashmap_free(function_scope);
                      exit(EXIT_FAILURE);
                  }
                  if (list_var_caller->type != VAR_LIST) {
-                      fprintf(stderr, "Error: Variable '%s' passed as argument %d to function '%s' is not a list.\n",
+                      fprintf(stderr, "\nError: Variable '%s' passed as argument %d to function '%s' is not a list.\n",
                               list_arg_name, i + 1, func_call->name);
                       free_function_scope_lists(function_scope);
                       hashmap_free(function_scope);
                       exit(EXIT_FAILURE);
                  }
                  if (list_var_caller->value.list_val.element_type != list_element_type) {
-                      fprintf(stderr, "Error: Type mismatch for list argument %d ('%s') for function '%s'. Expected list of type %d, got %d.\n",
+                      fprintf(stderr, "\nError: Type mismatch for list argument %d ('%s') for function '%s'. Expected list of type %d, got %d.\n",
                               i + 1, list_arg_name, func_call->name, list_element_type, list_var_caller->value.list_val.element_type);
                       free_function_scope_lists(function_scope);
                       hashmap_free(function_scope);
@@ -1162,13 +1163,13 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                  }
                  list_to_pass_head = deep_copy_list(list_var_caller->value.list_val.head);
                  if (!list_to_pass_head && list_var_caller->value.list_val.head != NULL) {
-                       fprintf(stderr, "Error: Failed to copy list argument %d for function '%s'.\n", i + 1, func_call->name);
+                       fprintf(stderr, "\nError: Failed to copy list argument %d for function '%s'.\n", i + 1, func_call->name);
                        free_function_scope_lists(function_scope);
                        hashmap_free(function_scope);
                        exit(EXIT_FAILURE);
                  }
             } else {
-                 fprintf(stderr, "Error: Invalid argument type (%d) for list parameter '%s' in function '%s'. Expected list variable or literal.\n",
+                 fprintf(stderr, "\nError: Invalid argument type (%d) for list parameter '%s' in function '%s'. Expected list variable or literal.\n",
                          arg_node->type, param->name, func_call->name);
                  free_function_scope_lists(function_scope);
                  hashmap_free(function_scope);
@@ -1180,7 +1181,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                 .value = { .list_val = { .element_type = list_element_type, .head = list_to_pass_head } }
             };
             if (!function_param_var.name) {
-                 fprintf(stderr, "Error: Failed to allocate memory for parameter name '%s'.\n", param->name);
+                 fprintf(stderr, "\nError: Failed to allocate memory for parameter name '%s'.\n", param->name);
                  free_list(list_to_pass_head);
                  free_function_scope_lists(function_scope);
                  hashmap_free(function_scope);
@@ -1189,7 +1190,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
 
             hashmap_set(function_scope, &function_param_var);
             if (hashmap_oom(function_scope)) {
-                  fprintf(stderr, "Error: Out of memory setting list parameter '%s'.\n", param->name);
+                  fprintf(stderr, "\nError: Out of memory setting list parameter '%s'.\n", param->name);
                   free(function_param_var.name);
                   free_list(list_to_pass_head);
                   free_function_scope_lists(function_scope);
@@ -1269,7 +1270,7 @@ void execute_return(const ReturnNode *node, struct hashmap *scope, ReturnContext
             if (temp.ret_val.value.str_val) {
                 ret_ctx->ret_val.value.str_val = strdup(temp.ret_val.value.str_val);
                 if (!ret_ctx->ret_val.value.str_val) {
-                    fprintf(stderr, "Error: Failed to duplicate string during return.\n");
+                    fprintf(stderr, "\nError: Failed to duplicate string during return.\n");
                     exit(EXIT_FAILURE);
                 }
             } else {
@@ -1281,7 +1282,7 @@ void execute_return(const ReturnNode *node, struct hashmap *scope, ReturnContext
             if (temp.ret_val.value.list_val) {
                 ret_ctx->ret_val.value.list_val = deep_copy_list(temp.ret_val.value.list_val);
                 if (!ret_ctx->ret_val.value.list_val) {
-                    fprintf(stderr, "Error: Failed to copy list during return.\n");
+                    fprintf(stderr, "\nError: Failed to copy list during return.\n");
                     exit(EXIT_FAILURE);
                 }
             } else {
@@ -1304,11 +1305,11 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
         Variable *list_var = get_variable(scope, node->target_name);
 
         if (!list_var) {
-            fprintf(stderr, "Error: List variable '%s' not found for assignment.\n", node->target_name);
+            fprintf(stderr, "\nError: List variable '%s' not found for assignment.\n", node->target_name);
             exit(EXIT_FAILURE);
         }
         if (list_var->type != VAR_LIST) {
-            fprintf(stderr, "Error: Variable '%s' is not a list for assignment.\n", node->target_name);
+            fprintf(stderr, "\nError: Variable '%s' is not a list for assignment.\n", node->target_name);
             exit(EXIT_FAILURE);
         }
 
@@ -1323,7 +1324,7 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
         const double index_val_double = evaluate_expression(node->index_expr, scope, &index_eval_ctx).value.num_val;
 
         if (index_val_double != floor(index_val_double)) {
-            fprintf(stderr, "Error: List index for '%s' must be an integer, got %f.\n", node->target_name, index_val_double);
+            fprintf(stderr, "\nError: List index for '%s' must be an integer, got %f.\n", node->target_name, index_val_double);
             exit(EXIT_FAILURE);
         }
         int index = (int)index_val_double;
@@ -1331,7 +1332,7 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
             index = list_size + index;
         }
         if (index < 0 || index >= list_size) {
-            fprintf(stderr, "Error: List index %d (calculated from %f) out of bounds for list '%s' of size %d during assignment.\n",
+            fprintf(stderr, "\nError: List index %d (calculated from %f) out of bounds for list '%s' of size %d during assignment.\n",
                     index, index_val_double, node->target_name, list_size);
             exit(EXIT_FAILURE);
         }
@@ -1345,7 +1346,7 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
         if (list_var->value.list_val.element_type == VAR_NUM) {
             const double value_to_assign = evaluate_expression(node->value_expr, scope, &value_eval_ctx).value.num_val;
             if (target_lnode->element.type != VAR_NUM) {
-                 fprintf(stderr, "Internal Error: List '%s' node type mismatch at index %d.\n", node->target_name, index);
+                 fprintf(stderr, "Internal \nError: List '%s' node type mismatch at index %d.\n", node->target_name, index);
                  exit(EXIT_FAILURE);
             }
             target_lnode->element.value.num_val = value_to_assign;
@@ -1353,11 +1354,11 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
             char *value_to_assign_str = get_string_value(node->value_expr, scope, &value_eval_ctx);
 
             if (!value_to_assign_str) {
-                 fprintf(stderr, "Error: Failed to evaluate string value for assignment to list '%s' at index %d.\n", node->target_name, index);
+                 fprintf(stderr, "\nError: Failed to evaluate string value for assignment to list '%s' at index %d.\n", node->target_name, index);
                  exit(EXIT_FAILURE);
             }
              if (target_lnode->element.type != VAR_STR) {
-                  fprintf(stderr, "Internal Error: List '%s' node type mismatch at index %d.\n", node->target_name, index);
+                  fprintf(stderr, "Internal \nError: List '%s' node type mismatch at index %d.\n", node->target_name, index);
                   free(value_to_assign_str);
                   exit(EXIT_FAILURE);
              }
@@ -1366,7 +1367,7 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
             }
             target_lnode->element.value.str_val = value_to_assign_str;
         } else {
-             fprintf(stderr, "Internal Error: Assignment to list '%s' with unknown element type.\n", node->target_name);
+             fprintf(stderr, "Internal \nError: Assignment to list '%s' with unknown element type.\n", node->target_name);
              exit(EXIT_FAILURE);
         }
 
@@ -1374,7 +1375,7 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
         Variable *existing_var = get_variable(scope, node->target_name);
 
         if (!existing_var) {
-            fprintf(stderr, "Error: Variable '%s' not declared before assignment.\n", node->target_name);
+            fprintf(stderr, "\nError: Variable '%s' not declared before assignment.\n", node->target_name);
             exit(EXIT_FAILURE);
         }
 
@@ -1385,7 +1386,7 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
         } else if (existing_var->type == VAR_STR) {
             char *value_to_assign_str = get_string_value(node->value_expr, scope, &value_eval_ctx);
              if (!value_to_assign_str) {
-                  fprintf(stderr, "Error: Failed to evaluate string value for assignment to variable '%s'.\n", node->target_name);
+                  fprintf(stderr, "\nError: Failed to evaluate string value for assignment to variable '%s'.\n", node->target_name);
                   exit(EXIT_FAILURE);
              }
             if (existing_var->value.str_val != NULL) {
@@ -1393,10 +1394,10 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
             }
             existing_var->value.str_val = value_to_assign_str;
         } else if (existing_var->type == VAR_LIST) {
-             fprintf(stderr, "Error: Cannot assign directly to a list variable '%s' using '='. Use list declaration or modify elements.\n", node->target_name);
+             fprintf(stderr, "\nError: Cannot assign directly to a list variable '%s' using '='. Use list declaration or modify elements.\n", node->target_name);
              exit(EXIT_FAILURE);
         } else {
-             fprintf(stderr, "Internal Error: Assignment to variable '%s' with unknown type.\n", node->target_name);
+             fprintf(stderr, "Internal \nError: Assignment to variable '%s' with unknown type.\n", node->target_name);
              exit(EXIT_FAILURE);
         }
     }

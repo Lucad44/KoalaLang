@@ -119,7 +119,7 @@ ListNode *deep_copy_list(const ListNode *head) {
             if (current->element.value.str_val != NULL) {
                 new_element.value.str_val = strdup(current->element.value.str_val);
                 if (!new_element.value.str_val) {
-                    fprintf(stderr, "Error: Failed to duplicate string during list copy.\n");
+                    fprintf(stderr, "\nError: Failed to duplicate string during list copy.\n");
                     free_list(new_head);
                     return NULL;
                 }
@@ -127,14 +127,14 @@ ListNode *deep_copy_list(const ListNode *head) {
                 new_element.value.str_val = NULL;
             }
         } else {
-            fprintf(stderr, "Internal Error: Unsupported element type %d during list copy.\n", element_type);
+            fprintf(stderr, "Internal \nError: Unsupported element type %d during list copy.\n", element_type);
             free_list(new_head);
             return NULL;
         }
 
         ListNode *new_node = create_list_node(new_element);
         if (!new_node) {
-            fprintf(stderr, "Error: Failed to allocate node during list copy.\n");
+            fprintf(stderr, "\nError: Failed to allocate node during list copy.\n");
             if (element_type == VAR_STR && new_element.value.str_val != NULL) {
                 free(new_element.value.str_val);
             }

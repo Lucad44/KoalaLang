@@ -190,7 +190,7 @@ double __round(const double n) {
 
 double __sqrt(const double n) {
     if (n < 0) {
-        fprintf(stderr, "Error: square root of negative number\n");
+        fprintf(stderr, "\nError: square root of negative number\n");
         exit(EXIT_FAILURE);
     }
     double guess = n / 2.0;
@@ -236,7 +236,7 @@ double __inverse(const double n) {
 
 double __factorial(const double n) {
     if (n <= 0) {
-        printf("Error: Factorial not defined for negative integers.\n");
+        printf("\nError: Factorial not defined for negative integers.\n");
         exit(EXIT_FAILURE);
     }
     return tgamma(n + 1);
@@ -244,7 +244,7 @@ double __factorial(const double n) {
 
 double __ln(const double n) {
     if (n <= 0) {
-        fprintf(stderr, "Error: ln not defined for negative or zero numbers.\n");
+        fprintf(stderr, "\nError: ln not defined for negative or zero numbers.\n");
         exit(EXIT_FAILURE);
     }
     return log(n);
@@ -252,7 +252,7 @@ double __ln(const double n) {
 
 double __log10(const double n) {
     if (n <= 0) {
-        fprintf(stderr, "Error: log10 not defined for negative or zero numbers.\n");
+        fprintf(stderr, "\nError: log10 not defined for negative or zero numbers.\n");
         exit(EXIT_FAILURE);
     }
     return log(n) / log(10);
@@ -260,7 +260,7 @@ double __log10(const double n) {
 
 double __log2(const double n) {
     if (n <= 0) {
-        fprintf(stderr, "Error: log2 not defined for negative or zero numbers.\n");
+        fprintf(stderr, "\nError: log2 not defined for negative or zero numbers.\n");
         exit(EXIT_FAILURE);
     }
     return log(n) / log(2);
@@ -268,11 +268,11 @@ double __log2(const double n) {
 
 double __log(const double n, const double base) {
     if (n <= 0) {
-        fprintf(stderr, "Error: log not defined for negative or zero numbers.\n");
+        fprintf(stderr, "\nError: log not defined for negative or zero numbers.\n");
         exit(EXIT_FAILURE);
     }
     if (base <= 0 || base == 1) {
-        fprintf(stderr, "Error: log base must be positive and not equal to 1.\n");
+        fprintf(stderr, "\nError: log base must be positive and not equal to 1.\n");
         exit(EXIT_FAILURE);
     }
     return log(n) / log(base);
@@ -312,7 +312,7 @@ double __csc(const double n) {
 
 double __arcsin(const double n) {
     if (n < -1 || n > 1) {
-        fprintf(stderr, "Error: arcsin argument must be in the range [−1,1].\n");
+        fprintf(stderr, "\nError: arcsin argument must be in the range [-1,1].\n");
         exit(EXIT_FAILURE);
     }
     return asin(n);
@@ -320,7 +320,7 @@ double __arcsin(const double n) {
 
 double __arccos(const double n) {
     if (n < -1 || n > 1) {
-        fprintf(stderr, "Error: arccos argument must be in the range [−1,1].\n");
+        fprintf(stderr, "\nError: arccos argument must be in the range [-1,1].\n");
         exit(EXIT_FAILURE);
     }
     return acos(n);
@@ -336,7 +336,7 @@ double __arccot(const double n) {
 
 double __arcsec(const double n) {
     if (n > -1 && n < 1) {
-        fprintf(stderr, "Error: arcsec argument must be in the range (−inf,−1]U[1,+inf).\n");
+        fprintf(stderr, "\nError: arcsec argument must be in the range (-inf,-1]U[1,+inf).\n");
         exit(EXIT_FAILURE);
     }
     return acos(1.0 / n);
@@ -344,7 +344,7 @@ double __arcsec(const double n) {
 
 double __arccsc(const double n) {
     if (n > -1 && n < 1) {
-        fprintf(stderr, "Error: arccsc argument must be in the range (−inf,−1]U[1,+inf).\n");
+        fprintf(stderr, "\nError: arccsc argument must be in the range (-inf,-1]U[1,+inf).\n");
         exit(EXIT_FAILURE);
     }
     return asin(1.0 / n);
@@ -364,7 +364,7 @@ double __tanh(const double n) {
 
 double __coth(const double n) {
     if (n == 0) {
-        fprintf(stderr, "Error: coth argument must be in the range (−inf,0)U(0,+inf).\n");
+        fprintf(stderr, "\nError: coth argument must be in the range (-inf,0)U(0,+inf).\n");
         exit(EXIT_FAILURE);
     }
     return 1.0 / tanh(n);
@@ -376,7 +376,7 @@ double __sech(const double n) {
 
 double __csch(const double n) {
     if (n == 0) {
-        fprintf(stderr, "Error: csch argument must be in the range (−inf,0)U(0,+inf).\n");
+        fprintf(stderr, "\nError: csch argument must be in the range (-inf,0)U(0,+inf).\n");
         exit(EXIT_FAILURE);
     }
     return 1.0 / sinh(n);
@@ -388,7 +388,7 @@ double __arcsinh(const double n) {
 
 double __arccosh(const double n) {
     if (n < 1) {
-        fprintf(stderr, "Error: arccosh argument must be in the range [1,+inf).\n");
+        fprintf(stderr, "\nError: arccosh argument must be in the range [1,+inf).\n");
         exit(EXIT_FAILURE);
     }
     return acosh(n);
@@ -396,7 +396,7 @@ double __arccosh(const double n) {
 
 double __arctanh(const double n) {
     if (n <= -1 || n >= 1) {
-        fprintf(stderr, "Error: arctanh argument must be in the range (−1,1).\n");
+        fprintf(stderr, "\nError: arctanh argument must be in the range (-1,1).\n");
         exit(EXIT_FAILURE);
     }
     return atanh(n);
@@ -404,7 +404,7 @@ double __arctanh(const double n) {
 
 double __arccoth(const double n) {
     if (n >= -1 && n <= 1) {
-        fprintf(stderr, "Error: arccoth argument must be in the range (−inf,−1)U(1,+inf).\n");
+        fprintf(stderr, "\nError: arccoth argument must be in the range (-inf,-1)U(1,+inf).\n");
         exit(EXIT_FAILURE);
     }
     return atanh(1.0 / n);
@@ -412,7 +412,7 @@ double __arccoth(const double n) {
 
 double __arcsech(const double n) {
     if (n <= 0 || n > 1) {
-        fprintf(stderr, "Error: arcsech argument must be in the range (0,1].\n");
+        fprintf(stderr, "\nError: arcsech argument must be in the range (0,1].\n");
         exit(EXIT_FAILURE);
     }
     return acosh(1.0 / n);
@@ -420,7 +420,7 @@ double __arcsech(const double n) {
 
 double __arccsch(const double n) {
     if (n > -1 && n < 1)  {
-        fprintf(stderr, "Error: arccsch argument must be in the range (−inf,−1]U[1,+inf).\n");
+        fprintf(stderr, "\nError: arccsch argument must be in the range (-inf,-1]U[1,+inf).\n");
         exit(EXIT_FAILURE);
     }
     return asinh(1.0 / n);
