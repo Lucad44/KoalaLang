@@ -21,7 +21,7 @@ int is_truthy(const ReturnValue val) {
         return val.value.str_val != NULL && strlen(val.value.str_val) > 0;
     }
     if (val.type == RET_LIST) {
-        return val.value.list_val != NULL;
+        return val.value.list_val.head != NULL;
     }
     return 0;
 }
@@ -38,10 +38,7 @@ void free_return_value(const ReturnType type, ReturnValue *value) {
             }
             break;
         case RET_LIST:
-            if (value->value.list_val) {
-                free_list(value->value.list_val);
-                value->value.list_val = NULL;
-            }
+            free_list(value->value.list_val.head);
             break;
         case RET_NUM:
         case RET_NONE:
@@ -109,7 +106,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             break;
         case NODE_STR_LITERAL:
             result.type = RET_STR;
-            result.value.str_val = node->data.str_literal.str_val;
+            result.value.str_val = strdup(node->data.str_literal.str_val);
             break;
         case NODE_EXPR_VARIABLE: {
             const Variable *variable = get_variable(scope, node->data.variable.name);
@@ -124,11 +121,12 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                     break;
                 case VAR_STR:
                     result.type = RET_STR;
-                    result.value.str_val = variable->value.str_val;
+                    result.value.str_val = strdup(variable->value.str_val);
                     break;
                 case VAR_LIST:
                     result.type = RET_LIST;
-                    result.value.list_val = variable->value.list_val.head;
+                    result.value.list_val.head = deep_copy_list(variable->value.list_val.head);
+                    result.value.list_val.element_type = variable->value.list_val.element_type;
                     break;
                 default:
                     fprintf(stderr, "Unknown variable type: %d\n", variable->type);
@@ -279,66 +277,68 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             result.value = ret_ctx->ret_val.value;
             break;
 
-        case NODE_LIST_ACCESS: {
-            const ListAccessNode *access_node = &node->data.list_access;
-            Variable *list_var = get_variable(scope, access_node->list_name);
-            if (!list_var) {
-                fprintf(stderr, "\nError: List variable '%s' not found.\n", access_node->list_name);
+        case NODE_VARIABLE_ACCESS: {
+            const VariableAccessNode *access_node = &node->data.variable_access;
+            Variable *var = get_variable(scope, access_node->name);
+            if (!var) {
+                fprintf(stderr, "\nError: Variable '%s' not found.\n", access_node->name);
                 exit(EXIT_FAILURE);
             }
-            if (list_var->type != VAR_LIST) {
-                fprintf(stderr, "\nError: Variable '%s' is not a list.\n", access_node->list_name);
-                exit(EXIT_FAILURE);
-            }
-            int list_size = 0;
-            const ListNode *counter_node = list_var->value.list_val.head;
-            while (counter_node != NULL) {
-                list_size++;
-                counter_node = counter_node->next;
-            }
-            ReturnContext index_eval_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
-            const double index_val_double = evaluate_expression(access_node->index_expr, scope, &index_eval_ctx).value.num_val;
-            if (index_val_double != floor(index_val_double)) {
-                 fprintf(stderr, "\nError: List index for '%s' must be an integer, got %f.\n",
-                         access_node->list_name, index_val_double);
-                 exit(EXIT_FAILURE);
-            }
+            if (var->type == VAR_STR) {
+                return evaluate_str_access(&node->data.variable_access, scope, ret_ctx);
+            } else if (var->type == VAR_LIST) {
+                int list_size = 0;
+                const ListNode *counter_node = var->value.list_val.head;
+                while (counter_node != NULL) {
+                    list_size++;
+                    counter_node = counter_node->next;
+                }
+                ReturnContext index_eval_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
+                const double index_val_double = evaluate_expression(access_node->index_expr, scope, &index_eval_ctx).value.num_val;
+                if (index_val_double != floor(index_val_double)) {
+                     fprintf(stderr, "\nError: List index for '%s' must be an integer, got %f.\n",
+                             access_node->name, index_val_double);
+                     exit(EXIT_FAILURE);
+                }
 
-            int index = (int) index_val_double;
-            if (index < 0) {
-                index = list_size + index;
-            }
-            if (index < 0 || index >= list_size) {
-                fprintf(stderr, "\nError: List index %d (calculated from %f) out of bounds for list '%s' of size %d.\n",
-                        index, index_val_double, access_node->list_name, list_size);
-                exit(EXIT_FAILURE);
-            }
-            const ListNode *current = list_var->value.list_val.head;
-            int count = 0;
-            while (count < index) {
-                current = current->next;
-                count++;
-            }
-
-            if (list_var->value.list_val.element_type == VAR_NUM) {
-                if (current->element.type == VAR_NUM) {
-                    result.type = RET_NUM;
-                    result.value.num_val = current->element.value.num_val;
-                } else {
-                    fprintf(stderr, "Internal \nError: List '%s' element type mismatch at index %d.\n", access_node->list_name, index);
+                int index = (int) index_val_double;
+                if (index < 0) {
+                    index = list_size + index;
+                }
+                if (index < 0 || index >= list_size) {
+                    fprintf(stderr, "\nError: List index %d (calculated from %f) out of bounds for list '%s' of size %d.\n",
+                            index, index_val_double, access_node->name, list_size);
                     exit(EXIT_FAILURE);
                 }
-            } else if (list_var->value.list_val.element_type == VAR_STR) {
-                if (current->element.type == VAR_STR) {
-                    result.type = RET_STR;
-                    result.value.str_val = current->element.value.str_val;
+                const ListNode *current = var->value.list_val.head;
+                int count = 0;
+                while (count < index) {
+                    current = current->next;
+                    count++;
+                }
+
+                if (var->value.list_val.element_type == VAR_NUM) {
+                    if (current->element.type == VAR_NUM) {
+                        result.type = RET_NUM;
+                        result.value.num_val = current->element.value.num_val;
+                    } else {
+                        fprintf(stderr, "Internal \nError: List '%s' element type mismatch at index %d.\n", access_node->name, index);
+                        exit(EXIT_FAILURE);
+                    }
+                } else if (var->value.list_val.element_type == VAR_STR) {
+                    if (current->element.type == VAR_STR) {
+                        result.type = RET_STR;
+                        result.value.str_val = current->element.value.str_val;
+                    } else {
+                        fprintf(stderr, "Internal \nError: List '%s' element type mismatch at index %d.\n", access_node->name, index);
+                        exit(EXIT_FAILURE);
+                    }
                 } else {
-                    fprintf(stderr, "Internal \nError: List '%s' element type mismatch at index %d.\n", access_node->list_name, index);
+                    fprintf(stderr, "Internal \nError: Unknown list element type for '%s'.\n", access_node->name);
                     exit(EXIT_FAILURE);
                 }
             } else {
-                fprintf(stderr, "Internal \nError: Unknown list element type for '%s'.\n", access_node->list_name);
-                exit(EXIT_FAILURE);
+                fprintf(stderr, "\nError: Variable '%s' is not a string nor a list.\n", access_node->name);
             }
             break;
         }
@@ -445,14 +445,25 @@ void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnCo
             if (element.type == VAR_NUM) {
                 element.value.num_val = evaluate_expression(literal->elements[i], scope, ret_ctx).value.num_val;
             } else if (element.type == VAR_STR) {
-                element.value.str_val = get_string_value(literal->elements[i], scope, ret_ctx);
+                ReturnValue value_val = evaluate_expression(literal->elements[i], scope, ret_ctx);
+                if (value_val.type != RET_STR) {
+                    fprintf(stderr, "\nError: Expected string element %d for list '%s', but got type %d.\n",
+                        i, node->name, value_val.type);
+                    free_list(head);
+                    free_return_value(value_val.type, &value_val);
+                    exit(EXIT_FAILURE);
+                }
+                element.value.str_val = strdup(value_val.value.str_val);
+                free_return_value(value_val.type, &value_val);
                 if (!element.value.str_val) {
-                     fprintf(stderr, "\nError: Failed to evaluate string element %d for list '%s'.\n", i, node->name);
+                     fprintf(stderr, "\nError: Failed to evaluate string element %d for list '%s'.\n",
+                         i, node->name);
                      free_list(head);
                      exit(EXIT_FAILURE);
                  }
             } else {
-                 fprintf(stderr, "Internal \nError: Invalid element type %d in list literal for '%s'.\n", element.type, node->name);
+                 fprintf(stderr, "Internal \nError: Invalid element type %d in list literal for '%s'.\n",
+                     element.type, node->name);
                  free_list(head);
                  exit(EXIT_FAILURE);
             }
@@ -496,118 +507,18 @@ void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnCo
      }
 }
 
-
-char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
-    char buffer[1024];
-    switch (node->type) {
-        case NODE_NUM_LITERAL: {
-            snprintf(buffer, sizeof(buffer), "%g", node->data.num_literal.num_val);
-            return strdup(buffer);
-        }
-        case NODE_STR_LITERAL: {
-            return strdup(node->data.str_literal.str_val);
-        }
-        case NODE_EXPR_VARIABLE: {
-            const Variable *variable = get_variable(scope, node->data.variable.name);
-            if (variable) {
-                if (variable->type == VAR_STR) {
-                    return strdup(variable->value.str_val);
-                }
-                if (variable->type == VAR_NUM) {
-                    snprintf(buffer, sizeof(buffer), "%g", variable->value.num_val);
-                    return strdup(buffer);
-                }
-                if (variable->type == VAR_LIST) {
-                    return strdup(list_to_string(variable->value.list_val.head, variable->value.list_val.element_type));
-                }
-            }
-            fprintf(stderr, "Undefined variable: %s\n", node->data.variable.name);
-            exit(EXIT_FAILURE);
-        }
-        case NODE_EXPR_UNARY: {
-            ReturnContext temp_ctx = {0};
-            const double value = evaluate_expression(node, scope, &temp_ctx).value.num_val;
-            snprintf(buffer, sizeof(buffer), "%g", value);
-            return strdup(buffer);
-        }
-        case NODE_FUNC_CALL: {
-            ReturnContext local_ret_ctx = { .is_return = 0 };
-            execute_func_call(&node->data.func_call, scope, &local_ret_ctx);
-
-            if (local_ret_ctx.is_return) {
-                switch (local_ret_ctx.ret_val.type) {
-                    case RET_STR:
-                        return strdup(local_ret_ctx.ret_val.value.str_val);
-                    case RET_NUM: {
-                        char num_buffer[64];
-                        snprintf(num_buffer, sizeof(num_buffer), "%g", local_ret_ctx.ret_val.value.num_val);
-                        return strdup(num_buffer);
-                    }
-                    case RET_LIST: {
-                        char *list_str = list_to_string(local_ret_ctx.ret_val.value.list_val, VAR_NUM);
-                        return list_str ? list_str : strdup("[\nError: Failed to convert list]");
-                    }
-                    default:
-                        fprintf(stderr, "\nError: Unsupported return type in string context.\n");
-                    exit(EXIT_FAILURE);
-                }
-            }
-            fprintf(stderr, "\nError: Function call did not return a value in string context.\n");
-            exit(EXIT_FAILURE);
-        }
-        case NODE_LIST_ACCESS: {
-            const ListAccessNode *access_node = &node->data.list_access;
-            Variable *list_var = get_variable(scope, access_node->list_name);
-             if (!list_var || list_var->type != VAR_LIST) {
-                 fprintf(stderr, "\nError: List variable '%s' not found or is not a list.\n", access_node->list_name);
-                 exit(EXIT_FAILURE);
-             }
-
-             int list_size = 0;
-            const ListNode *counter_node = list_var->value.list_val.head;
-             while (counter_node != NULL) {
-                 list_size++;
-                 counter_node = counter_node->next;
-             }
-
-             ReturnContext index_eval_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
-            const double index_val_double = evaluate_expression(access_node->index_expr, scope, &index_eval_ctx).value.num_val;
-             if (index_val_double != floor(index_val_double)) {
-                  fprintf(stderr, "\nError: List index must be an integer.\n");
-                 exit(EXIT_FAILURE);
-             }
-             int index = (int) index_val_double;
-
-             if (index < 0) {
-                 index = list_size + index;
-             }
-
-             if (index < 0 || index >= list_size) {
-                 fprintf(stderr, "\nError: List index out of bounds.\n");
-                 exit(EXIT_FAILURE);
-             }
-
-            const ListNode *current = list_var->value.list_val.head;
-             int count = 0;
-             while (count < index) {
-                 current = current->next;
-                 count++;
-             }
-
-             if (current->element.type == VAR_NUM) {
-                 snprintf(buffer, sizeof(buffer), "%g", current->element.value.num_val);
-                 return strdup(buffer);
-             }
-             if (current->element.type == VAR_STR) {
-                return strdup(current->element.value.str_val ? current->element.value.str_val : "");
-             }
-            fprintf(stderr, "\nError: unknown list element type.\n");
-            exit(EXIT_FAILURE);
-        }
-        default: {
-            fprintf(stderr, "\nError: Unsupported node type in string context.\n");
-            exit(EXIT_FAILURE);
-        }
+char *get_string_value(const ReturnValue value) {
+    switch (value.type) {
+        case RET_NUM:
+            char ret[1024];
+            snprintf(ret, sizeof(ret), "%lf", value.value.num_val);
+            return strdup(ret);
+        case RET_STR:
+            return strdup(value.value.str_val);
+        case RET_LIST:
+            return strdup(list_to_string(value.value.list_val.head, value.value.list_val.element_type));
+        default:
+            return NULL;
     }
 }
 
@@ -619,7 +530,10 @@ void execute_print(const PrintNode *node, struct hashmap *scope, ReturnContext *
     }
 
     for (int i = 0; i < node->expr_count; i++) {
-        char *part = get_string_value(node->expr_list[i], scope, ret_ctx);
+        ReturnValue value_val = evaluate_expression(node->expr_list[i], scope, ret_ctx);
+        value_val.value.str_val = get_string_value(value_val);
+        char *part = strdup(value_val.value.str_val);
+        free_return_value(value_val.type, &value_val);
         if (!part) {
             fprintf(stderr, "\nError: Failed to get string value for print argument %d.\n", i + 1);
             continue;
@@ -679,7 +593,7 @@ void execute(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx)
             execute_return(&node->data.return_stmt, scope, ret_ctx);
             break;
         case NODE_ASSIGNMENT:
-            execute_assignment(&node->data.assignment, scope);
+            execute_assignment(&node->data.assignment, scope, ret_ctx);
             break;
         default:
             fprintf(stderr, "Unknown node type: %d\n", node->type);
@@ -917,7 +831,7 @@ ReturnValue execute_function_body(const ASTNode *body, struct hashmap *scope, Re
             case RET_LIST:
                 result.value.list_val = ret_ctx->ret_val.value.list_val;
                 result.type = RET_LIST;
-                ret_ctx->ret_val.value.list_val = NULL;
+                ret_ctx->ret_val.value.list_val.head = NULL;
                 break;
             case RET_NONE:
                 break;
@@ -1098,11 +1012,23 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                      ListElement element;
                      element.type = list_element_type;
                      if (list_element_type == VAR_NUM) {
-                         element.value.num_val = evaluate_expression(literal_node->elements[j], scope, &arg_eval_ctx).value.num_val;
+                         element.value.num_val = evaluate_expression(literal_node->elements[j], scope,
+                             &arg_eval_ctx).value.num_val;
                      } else if (list_element_type == VAR_STR) {
-                         element.value.str_val = get_string_value(literal_node->elements[j], scope, &arg_eval_ctx);
+                         ReturnValue value_val = evaluate_expression(literal_node->elements[j], scope, &arg_eval_ctx);
+                         if (value_val.type != RET_STR) {
+                             fprintf(stderr, "Error evaluating string element %d for list literal argument %d "
+                                             "in call to '%s'.\n", j, i + 1, func_call->name);
+                             free_list(list_to_pass_head);
+                             free_function_scope_lists(function_scope);
+                             hashmap_free(function_scope);
+                             exit(EXIT_FAILURE);
+                         }
+                         element.value.str_val = strdup(value_val.value.str_val);
+                         free_return_value(value_val.type, &value_val);
                          if (!element.value.str_val) {
-                             fprintf(stderr, "Error evaluating string element %d for list literal argument %d in call to '%s'.\n",
+                             fprintf(stderr, "Error evaluating string element %d for list literal argument %d"
+                                             " in call to '%s'.\n",
                                       j, i + 1, func_call->name);
                              free_list(list_to_pass_head);
                              free_function_scope_lists(function_scope);
@@ -1110,7 +1036,8 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                              exit(EXIT_FAILURE);
                          }
                      } else {
-                          fprintf(stderr, "Internal \nError: Unsupported list element type %d for parameter '%s' in function '%s'.\n",
+                          fprintf(stderr, "Internal \nError: Unsupported list element type %d for parameter '%s'"
+                                          " in function '%s'.\n",
                                   list_element_type, param->name, func_call->name);
                          free_list(list_to_pass_head);
                          free_function_scope_lists(function_scope);
@@ -1219,7 +1146,17 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
               }
 
         } else if (param->type == VAR_STR) {
-            char *value = get_string_value(arg_node, scope, &arg_eval_ctx);
+            ReturnValue value_val = evaluate_expression(arg_node, scope, &arg_eval_ctx);
+            if (value_val.type != RET_STR) {
+                fprintf(stderr, "\nError: Invalid type (%d) for string parameter '%s' in function '%s'."
+                                " Expected string.\n", value_val.type, param->name, func_call->name);
+                free_return_value(value_val.type, &value_val);
+                free_function_scope_lists(function_scope);
+                hashmap_free(function_scope);
+                exit(EXIT_FAILURE);
+            }
+            char *value = strdup(value_val.value.str_val);
+            free_return_value(value_val.type, &value_val);
              Variable function_param_var = {
                   .name = strdup(param->name),
                   .type = VAR_STR,
@@ -1279,14 +1216,14 @@ void execute_return(const ReturnNode *node, struct hashmap *scope, ReturnContext
             break;
 
         case RET_LIST:
-            if (temp.ret_val.value.list_val) {
-                ret_ctx->ret_val.value.list_val = deep_copy_list(temp.ret_val.value.list_val);
-                if (!ret_ctx->ret_val.value.list_val) {
+            if (temp.ret_val.value.list_val.head) {
+                ret_ctx->ret_val.value.list_val.head = deep_copy_list(temp.ret_val.value.list_val.head);
+                if (!ret_ctx->ret_val.value.list_val.head) {
                     fprintf(stderr, "\nError: Failed to copy list during return.\n");
                     exit(EXIT_FAILURE);
                 }
             } else {
-                ret_ctx->ret_val.value.list_val = NULL;
+                ret_ctx->ret_val.value.list_val.head = NULL;
             }
             break;
 
@@ -1300,77 +1237,139 @@ void execute_return(const ReturnNode *node, struct hashmap *scope, ReturnContext
     }
 }
 
-void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
+void execute_assignment(const AssignmentNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
+    Variable *var = get_variable(scope, node->target_name);
+
+    if (!var) {
+        fprintf(stderr, "\nError: Variable '%s' not found for assignment.\n", node->target_name);
+        exit(EXIT_FAILURE);
+    }
+
     if (node->index_expr != NULL) {
-        Variable *list_var = get_variable(scope, node->target_name);
+        if (var->type == VAR_LIST) {
+            Variable *list_var = get_variable(scope, node->target_name);
 
-        if (!list_var) {
-            fprintf(stderr, "\nError: List variable '%s' not found for assignment.\n", node->target_name);
-            exit(EXIT_FAILURE);
-        }
-        if (list_var->type != VAR_LIST) {
-            fprintf(stderr, "\nError: Variable '%s' is not a list for assignment.\n", node->target_name);
-            exit(EXIT_FAILURE);
-        }
-
-        int list_size = 0;
-        const ListNode *counter_node = list_var->value.list_val.head;
-        while (counter_node != NULL) {
-            list_size++;
-            counter_node = counter_node->next;
-        }
-
-        ReturnContext index_eval_ctx = {0};
-        const double index_val_double = evaluate_expression(node->index_expr, scope, &index_eval_ctx).value.num_val;
-
-        if (index_val_double != floor(index_val_double)) {
-            fprintf(stderr, "\nError: List index for '%s' must be an integer, got %f.\n", node->target_name, index_val_double);
-            exit(EXIT_FAILURE);
-        }
-        int index = (int)index_val_double;
-        if (index < 0) {
-            index = list_size + index;
-        }
-        if (index < 0 || index >= list_size) {
-            fprintf(stderr, "\nError: List index %d (calculated from %f) out of bounds for list '%s' of size %d during assignment.\n",
-                    index, index_val_double, node->target_name, list_size);
-            exit(EXIT_FAILURE);
-        }
-
-        ListNode *target_lnode = list_var->value.list_val.head;
-        for (int i = 0; i < index; ++i) {
-            target_lnode = target_lnode->next;
-        }
-
-        ReturnContext value_eval_ctx = {0};
-        if (list_var->value.list_val.element_type == VAR_NUM) {
-            const double value_to_assign = evaluate_expression(node->value_expr, scope, &value_eval_ctx).value.num_val;
-            if (target_lnode->element.type != VAR_NUM) {
-                 fprintf(stderr, "Internal \nError: List '%s' node type mismatch at index %d.\n", node->target_name, index);
-                 exit(EXIT_FAILURE);
+            if (!list_var) {
+                fprintf(stderr, "\nError: List variable '%s' not found for assignment.\n", node->target_name);
+                exit(EXIT_FAILURE);
             }
-            target_lnode->element.value.num_val = value_to_assign;
-        } else if (list_var->value.list_val.element_type == VAR_STR) {
-            char *value_to_assign_str = get_string_value(node->value_expr, scope, &value_eval_ctx);
+            if (list_var->type != VAR_LIST) {
+                fprintf(stderr, "\nError: Variable '%s' is not a list for assignment.\n", node->target_name);
+                exit(EXIT_FAILURE);
+            }
 
-            if (!value_to_assign_str) {
-                 fprintf(stderr, "\nError: Failed to evaluate string value for assignment to list '%s' at index %d.\n", node->target_name, index);
-                 exit(EXIT_FAILURE);
+            int list_size = 0;
+            const ListNode *counter_node = list_var->value.list_val.head;
+            while (counter_node != NULL) {
+                list_size++;
+                counter_node = counter_node->next;
             }
-             if (target_lnode->element.type != VAR_STR) {
-                  fprintf(stderr, "Internal \nError: List '%s' node type mismatch at index %d.\n", node->target_name, index);
-                  free(value_to_assign_str);
-                  exit(EXIT_FAILURE);
-             }
-            if (target_lnode->element.value.str_val != NULL) {
-                free(target_lnode->element.value.str_val);
+
+            ReturnContext index_eval_ctx = {0};
+            const double index_val_double = evaluate_expression(node->index_expr, scope, &index_eval_ctx).value.num_val;
+
+            if (index_val_double != floor(index_val_double)) {
+                fprintf(stderr, "\nError: List index for '%s' must be an integer, got %f.\n", node->target_name, index_val_double);
+                exit(EXIT_FAILURE);
             }
-            target_lnode->element.value.str_val = value_to_assign_str;
+            int index = (int)index_val_double;
+            if (index < 0) {
+                index = list_size + index;
+            }
+            if (index < 0 || index >= list_size) {
+                fprintf(stderr, "\nError: List index %d (calculated from %f) out of bounds for list '%s' of size %d during assignment.\n",
+                        index, index_val_double, node->target_name, list_size);
+                exit(EXIT_FAILURE);
+            }
+
+            ListNode *target_lnode = list_var->value.list_val.head;
+            for (int i = 0; i < index; ++i) {
+                target_lnode = target_lnode->next;
+            }
+
+            ReturnContext value_eval_ctx = {0};
+            if (list_var->value.list_val.element_type == VAR_NUM) {
+                const double value_to_assign = evaluate_expression(node->value_expr, scope,
+                    &value_eval_ctx).value.num_val;
+                if (target_lnode->element.type != VAR_NUM) {
+                    fprintf(stderr, "Internal \nError: List '%s' node type mismatch at index %d.\n",
+                        node->target_name, index);
+                    exit(EXIT_FAILURE);
+                }
+                target_lnode->element.value.num_val = value_to_assign;
+            } else if (list_var->value.list_val.element_type == VAR_STR) {
+                ReturnValue value_val = evaluate_expression(node->value_expr, scope, &value_eval_ctx);
+                if (value_val.type != RET_STR) {
+                    fprintf(stderr, "\nError: Failed to evaluate string value for assignment to list '%s'"
+                                    " at index %d.\n", node->target_name, index);
+                    exit(EXIT_FAILURE);
+                }
+                char *value_to_assign_str = strdup(value_val.value.str_val);
+                free_return_value(value_val.type, &value_val);
+
+                if (!value_to_assign_str) {
+                    fprintf(stderr, "\nError: Failed to evaluate string value for assignment to list '%s'"
+                                    " at index %d.\n", node->target_name, index);
+                    exit(EXIT_FAILURE);
+                }
+                if (target_lnode->element.type != VAR_STR) {
+                    fprintf(stderr, "Internal \nError: List '%s' node type mismatch at index %d.\n",
+                        node->target_name, index);
+                    free(value_to_assign_str);
+                    exit(EXIT_FAILURE);
+                }
+                if (target_lnode->element.value.str_val != NULL) {
+                    free(target_lnode->element.value.str_val);
+                }
+                target_lnode->element.value.str_val = value_to_assign_str;
+            } else {
+                fprintf(stderr, "Internal \nError: Assignment to list '%s' with unknown element type.\n", node->target_name);
+                exit(EXIT_FAILURE);
+            }
+        } else if (var->type == VAR_STR) {
+            ReturnValue index_val = evaluate_expression(node->index_expr, scope, ret_ctx);
+            ReturnValue value_val = evaluate_expression(node->value_expr, scope, ret_ctx);
+
+            if (index_val.type != RET_NUM) {
+                fprintf(stderr, "\nError: String index must be a number.\n");
+                exit(EXIT_FAILURE);
+            }
+
+            if (value_val.type != RET_STR) {
+                fprintf(stderr, "\nError: Can only assign a string character with a string value.\n");
+                exit(EXIT_FAILURE);
+            }
+
+            int index = (int)index_val.value.num_val;
+            char *str = var->value.str_val;
+            int str_len = strlen(str);
+
+            // Handle negative indices
+            if (index < 0) {
+                index = str_len + index;
+            }
+
+            // Check bounds
+            if (index < 0 || index >= str_len) {
+                fprintf(stderr, "\nError: String index out of range.\n");
+                exit(EXIT_FAILURE);
+            }
+
+            // Check if the value is a single character
+            if (strlen(value_val.value.str_val) != 1) {
+                fprintf(stderr, "\nError: Can only assign a single character to a string index.\n");
+                exit(EXIT_FAILURE);
+            }
+
+            // Assign the character
+            str[index] = value_val.value.str_val[0];
+
+            // Clean up
+            free(value_val.value.str_val);
         } else {
-             fprintf(stderr, "Internal \nError: Assignment to list '%s' with unknown element type.\n", node->target_name);
-             exit(EXIT_FAILURE);
+            fprintf(stderr, "\nError: Assignment operation only supported for lists and strings.\n");
+            exit(EXIT_FAILURE);
         }
-
     } else {
         Variable *existing_var = get_variable(scope, node->target_name);
 
@@ -1384,9 +1383,17 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
             const double value_to_assign = evaluate_expression(node->value_expr, scope, &value_eval_ctx).value.num_val;
             existing_var->value.num_val = value_to_assign;
         } else if (existing_var->type == VAR_STR) {
-            char *value_to_assign_str = get_string_value(node->value_expr, scope, &value_eval_ctx);
+            ReturnValue value_val = evaluate_expression(node->value_expr, scope, &value_eval_ctx);
+            if (value_val.type != RET_STR) {
+                fprintf(stderr, "\nError: Failed to evaluate string value for assignment to variable '%s'.\n",
+                    node->target_name);
+                exit(EXIT_FAILURE);
+            }
+            char *value_to_assign_str = strdup(value_val.value.str_val);
+            free_return_value(value_val.type, &value_val);
              if (!value_to_assign_str) {
-                  fprintf(stderr, "\nError: Failed to evaluate string value for assignment to variable '%s'.\n", node->target_name);
+                  fprintf(stderr, "\nError: Failed to evaluate string value for assignment to variable '%s'.\n",
+                      node->target_name);
                   exit(EXIT_FAILURE);
              }
             if (existing_var->value.str_val != NULL) {
@@ -1394,11 +1401,62 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
             }
             existing_var->value.str_val = value_to_assign_str;
         } else if (existing_var->type == VAR_LIST) {
-             fprintf(stderr, "\nError: Cannot assign directly to a list variable '%s' using '='. Use list declaration or modify elements.\n", node->target_name);
+             fprintf(stderr, "\nError: Cannot assign directly to a list variable '%s' using '='."
+                             " Use list declaration or modify elements.\n", node->target_name);
              exit(EXIT_FAILURE);
         } else {
-             fprintf(stderr, "Internal \nError: Assignment to variable '%s' with unknown type.\n", node->target_name);
+             fprintf(stderr, "Internal \nError: Assignment to variable '%s' with unknown type.\n",
+                 node->target_name);
              exit(EXIT_FAILURE);
         }
     }
+}
+
+ReturnValue evaluate_str_access(const VariableAccessNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
+    Variable *str_var = get_variable(scope, node->name);
+
+    if (!str_var) {
+        fprintf(stderr, "\nError: Undefined variable '%s'.\n", node->name);
+        exit(EXIT_FAILURE);
+    }
+
+    if (str_var->type != VAR_STR) {
+        fprintf(stderr, "\nError: Cannot index a non-string variable '%s'.\n", node->name);
+        exit(EXIT_FAILURE);
+    }
+
+    // Get the string value and its length
+    char *str = str_var->value.str_val;
+    int str_len = strlen(str);
+
+    // Evaluate the index expression
+    ReturnValue index_val = evaluate_expression(node->index_expr, scope, ret_ctx);
+
+    if (index_val.type != RET_NUM) {
+        fprintf(stderr, "\nError: String index must be a number.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Convert the index to integer
+    int index = (int)index_val.value.num_val;
+
+    // Handle negative indices (Python-like behavior)
+    if (index < 0) {
+        index = str_len + index;
+    }
+
+    // Check bounds
+    if (index < 0 || index >= str_len) {
+        fprintf(stderr, "\nError: String index out of range.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Create a single character string result
+    ReturnValue result;
+    result.type = RET_STR;
+    result.value.str_val = safe_malloc(2);
+    result.value.str_val[0] = str[index];
+    result.value.str_val[1] = '\0';
+
+    return result;
 }

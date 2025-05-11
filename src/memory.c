@@ -57,9 +57,9 @@ void free_ast(void *node) {
         case NODE_EXPR_VARIABLE:
             free(ast_node->data.variable.name);
             break;
-        case NODE_LIST_ACCESS:
-            free(ast_node->data.list_access.list_name);
-            free_ast(ast_node->data.list_access.index_expr);
+        case NODE_VARIABLE_ACCESS:
+            free(ast_node->data.variable_access.name);
+            free_ast(ast_node->data.variable_access.index_expr);
             break;
         case NODE_EXPR_UNARY:
             free_ast(ast_node->data.unary_expr.operand);

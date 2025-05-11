@@ -19,7 +19,10 @@ typedef struct {
     union {
         double num_val;
         char *str_val;
-        ListNode *list_val;
+        struct {
+            VarType element_type;
+            ListNode *head;
+        } list_val;
     } value;
 } ReturnValue;
 
@@ -62,10 +65,12 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
 
 void execute_return(const ReturnNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
 
-char *get_string_value(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
-
 void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
 
-void execute_assignment(const AssignmentNode *node, struct hashmap *scope);
+void execute_assignment(const AssignmentNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
+
+ReturnValue evaluate_str_access(const VariableAccessNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
+
+char *get_string_value(ReturnValue value);
 
 #endif //INTERPRETER_H

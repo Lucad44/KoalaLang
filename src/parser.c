@@ -94,9 +94,8 @@ ASTNode *parse_primary(Parser *parser) {
         case TOKEN_IDENTIFIER:
             node->type = NODE_EXPR_VARIABLE;
             node->data.variable.name = strdup(parser->current_token.lexeme);
-            char* potential_list_name = node->data.variable.name;
+            char* var_name = node->data.variable.name;
             advance(parser);
-
 
             if (parser->current_token.type == TOKEN_LBRACKET) {
                 advance(parser);
@@ -104,16 +103,15 @@ ASTNode *parse_primary(Parser *parser) {
                 ASTNode *index_expr = parse_expression(parser);
 
                 if (parser->current_token.type != TOKEN_RBRACKET) {
-                    fprintf(stderr, "\nError: Expected ']' after list index expression.\n");
-
+                    fprintf(stderr, "\nError: Expected ']' after index expression.\n");
                     exit(EXIT_FAILURE);
                 }
                 advance(parser);
-                node->type = NODE_LIST_ACCESS;
-                node->data.list_access.list_name = potential_list_name;
-                node->data.list_access.index_expr = index_expr;
-            }
 
+                node->type = NODE_VARIABLE_ACCESS;
+                node->data.variable_access.name = var_name;
+                node->data.variable_access.index_expr = index_expr;
+            }
             break;
         default:
             fprintf(stderr, "Unexpected token in expression: %d\n", parser->current_token.type);

@@ -22,7 +22,7 @@ typedef enum {
     NODE_EXPR_UNARY,
     NODE_EXPR_BINARY,
     NODE_EXPR_POSTFIX,
-    NODE_LIST_ACCESS,
+    NODE_VARIABLE_ACCESS,
     NODE_ASSIGNMENT
 } NodeType;
 
@@ -152,9 +152,9 @@ typedef struct {
 } ListDeclNode;
 
 typedef struct {
-    char *list_name;
+    char *name;
     ASTNode *index_expr;
-} ListAccessNode;
+} VariableAccessNode;
 
 typedef struct {
     char *target_name;
@@ -181,7 +181,7 @@ struct ASTNode {
         FuncDeclNode func_decl;
         FuncCallNode func_call;
         ReturnNode return_stmt;
-        ListAccessNode list_access;
+        VariableAccessNode variable_access;
         AssignmentNode assignment;
     } data;
 };
