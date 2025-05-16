@@ -21,6 +21,8 @@ typedef struct {
         char *str_val;
         struct {
             VarType element_type;
+            VarType nested_element_type; // Type of elements in nested lists
+            bool is_nested;              // Whether this is a list of lists
             ListNode *head;
         } list_val;
     } value;

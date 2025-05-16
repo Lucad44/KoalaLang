@@ -750,6 +750,8 @@ ASTNode *parse_list_literal(Parser *parser, VarType expected_element_type) {
     ASTNode *list_node = safe_malloc(sizeof(ASTNode));
     list_node->type = NODE_LIST_LITERAL;
     list_node->data.list_literal.element_type = expected_element_type;
+    list_node->data.list_literal.is_nested = false;
+    list_node->data.list_literal.nested_element_type = VAR_NUM;
     list_node->data.list_literal.elements = elements;
     list_node->data.list_literal.element_count = element_count;
 
@@ -757,41 +759,35 @@ ASTNode *parse_list_literal(Parser *parser, VarType expected_element_type) {
 }
 
 ASTNode *parse_list_declaration(Parser *parser) {
-    advance(parser);
-    if (parser->current_token.type != TOKEN_LBRACKET) {
-        fprintf(stderr, "Expected '[' after 'list' keyword\n");
-        exit(EXIT_FAILURE);
-    }
-    advance(parser);
-    VarType element_type;
-    if (parser->current_token.type == TOKEN_KEYWORD_NUM) {
-        element_type = VAR_NUM;
-    } else if (parser->current_token.type == TOKEN_KEYWORD_STR) {
-        element_type = VAR_STR;
-    } else {
-        fprintf(stderr, "Expected 'num' or 'str' inside list type specifier '[ ]'\n");
-        exit(EXIT_FAILURE);
-    }
-    advance(parser);
+    advance(parser); // Skip past the 'list' keyword
 
-    if (parser->current_token.type != TOKEN_RBRACKET) {
-        fprintf(stderr, "Expected ']' after list element type\n");
-        exit(EXIT_FAILURE);
-    }
-    advance(parser);
+    // Use our new function to parse the list type
+    ASTNode *type_node = parse_list_type(parser);
+    VarType element_type = type_node->data.list_decl.element_type;
+    bool is_nested_list = type_node->data.list_decl.is_nested_list;
+    VarType nested_element_type = type_node->data.list_decl.nested_element_type;
+    free(type_node); // Free the temporary node
 
     if (parser->current_token.type != TOKEN_IDENTIFIER) {
         fprintf(stderr, "Expected identifier (list name) after list type specifier\n");
         exit(EXIT_FAILURE);
     }
+
     char *name = strdup(parser->current_token.lexeme);
     advance(parser);
+
     ASTNode *init_expr = NULL;
     if (parser->current_token.type == TOKEN_OPERATOR_EQUAL) {
         advance(parser);
 
         if (parser->current_token.type == TOKEN_LBRACKET) {
-             init_expr = parse_list_literal(parser, element_type);
+            if (is_nested_list) {
+                // Parse a nested list literal
+                init_expr = parse_nested_list_literal(parser, element_type, nested_element_type);
+            } else {
+                // Parse a normal list literal
+                init_expr = parse_list_literal(parser, element_type);
+            }
         } else {
             fprintf(stderr, "Expected list literal '[' after '=' for list initialization\n");
             free(name);
@@ -806,11 +802,16 @@ ASTNode *parse_list_declaration(Parser *parser) {
         exit(EXIT_FAILURE);
     }
     advance(parser);
+
+    // Create the list declaration node
     ASTNode *node = safe_malloc(sizeof(ASTNode));
     node->type = NODE_LIST_DECL;
     node->data.list_decl.name = name;
     node->data.list_decl.element_type = element_type;
+    node->data.list_decl.is_nested_list = is_nested_list;
+    node->data.list_decl.nested_element_type = nested_element_type;
     node->data.list_decl.init_expr = init_expr;
+
     return node;
 }
 
@@ -891,3 +892,123 @@ ASTNode *parse_expression_statement(Parser *parser) {
 
     return node;
 }
+
+ASTNode *parse_list_type(Parser *parser) {
+    if (parser->current_token.type != TOKEN_LBRACKET) {
+        fprintf(stderr, "Expected '[' in list type specifier\n");
+        exit(EXIT_FAILURE);
+    }
+    advance(parser);
+
+    VarType element_type;
+    bool is_nested_list = false;
+    VarType nested_element_type = VAR_NUM; // Default, will be overridden if nested
+
+    if (parser->current_token.type == TOKEN_KEYWORD_NUM) {
+        element_type = VAR_NUM;
+        advance(parser);
+    } else if (parser->current_token.type == TOKEN_KEYWORD_STR) {
+        element_type = VAR_STR;
+        advance(parser);
+    } else if (parser->current_token.type == TOKEN_KEYWORD_LIST) {
+        element_type = VAR_LIST;
+        is_nested_list = true;
+        advance(parser);
+        // Parse the nested list type
+        ASTNode *nested_type = parse_list_type(parser);
+        nested_element_type = nested_type->data.list_decl.element_type;
+        free(nested_type); // We don't need the full AST node, just the type info
+    } else {
+        fprintf(stderr, "Expected 'num', 'str', or 'list' inside list type specifier '[ ]'\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (parser->current_token.type != TOKEN_RBRACKET) {
+        fprintf(stderr, "Expected ']' after list element type\n");
+        exit(EXIT_FAILURE);
+    }
+    advance(parser);
+
+    // Create a temporary node to return type information
+    ASTNode *type_node = safe_malloc(sizeof(ASTNode));
+    type_node->type = NODE_LIST_DECL;
+    type_node->data.list_decl.element_type = element_type;
+    type_node->data.list_decl.is_nested_list = is_nested_list;
+    type_node->data.list_decl.nested_element_type = nested_element_type;
+
+    return type_node;
+}
+
+ASTNode *parse_nested_list_literal(Parser *parser, VarType list_type, VarType nested_type) {
+    if (parser->current_token.type != TOKEN_LBRACKET) {
+        fprintf(stderr, "Internal Parser Error: Expected '[' for nested list literal.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    advance(parser);
+
+    ASTNode **elements = NULL;
+    int element_count = 0;
+
+    while (parser->current_token.type != TOKEN_RBRACKET) {
+        if (parser->current_token.type == TOKEN_LBRACKET) {
+            // This is a nested list element
+            ASTNode *element_expr;
+
+            if (nested_type == VAR_LIST) {
+                // Multi-level nesting (list of list of list...)
+                element_expr = parse_nested_list_literal(parser, nested_type, nested_type);
+            } else {
+                // Single level nesting (list of list of primitives)
+                element_expr = parse_list_literal(parser, nested_type);
+            }
+
+            elements = safe_realloc(elements, (element_count + 1) * sizeof(ASTNode *));
+            elements[element_count++] = element_expr;
+        } else {
+            fprintf(stderr, "Expected '[' for nested list element, got token type %d\n",
+                    parser->current_token.type);
+
+            for (int i = 0; i < element_count; ++i) {
+                free_ast(elements[i]);
+            }
+            free(elements);
+            exit(EXIT_FAILURE);
+        }
+
+        if (parser->current_token.type == TOKEN_RBRACKET) {
+            break;
+        }
+
+        if (parser->current_token.type != TOKEN_COMMA) {
+            fprintf(stderr, "Expected ',' or ']' in nested list literal, got token type %d\n",
+                    parser->current_token.type);
+
+            for (int i = 0; i < element_count; ++i) {
+                free_ast(elements[i]);
+            }
+            free(elements);
+            exit(EXIT_FAILURE);
+        }
+        advance(parser);
+    }
+
+    if (parser->current_token.type != TOKEN_RBRACKET) {
+        fprintf(stderr, "Expected ']' to close nested list literal, got token type %d\n",
+                parser->current_token.type);
+        exit(EXIT_FAILURE);
+    }
+    advance(parser);
+
+    // Create the list literal node
+    ASTNode *list_node = safe_malloc(sizeof(ASTNode));
+    list_node->type = NODE_LIST_LITERAL;
+    list_node->data.list_literal.element_type = list_type;
+    list_node->data.list_literal.nested_element_type = nested_type;
+    list_node->data.list_literal.elements = elements;
+    list_node->data.list_literal.element_count = element_count;
+    list_node->data.list_literal.is_nested = true;
+
+    return list_node;
+}
+

@@ -14,10 +14,18 @@ typedef enum {
 } VarType;
 
 typedef struct {
+    VarType element_type;
+    VarType nested_element_type; // Type of elements in nested lists
+    bool is_nested;              // Whether this is a list of lists
+    struct ListNode *head;
+} NestedList;
+
+typedef struct {
     VarType type;
     union {
         double num_val;
         char *str_val;
+        NestedList nested_list;  // For lists of lists
     } value;
 } ListElement;
 
@@ -32,6 +40,8 @@ typedef struct {
         char *str_val;
         struct {
             VarType element_type;
+            VarType nested_element_type; // Type of elements in nested lists
+            bool is_nested;              // Whether this is a list of lists
             ListNode *head;
         } list_val;
     };

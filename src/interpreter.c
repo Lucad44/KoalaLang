@@ -108,6 +108,112 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             result.type = RET_STR;
             result.value.str_val = strdup(node->data.str_literal.str_val);
             break;
+         case NODE_LIST_LITERAL: {
+            const ListLiteralNode *literal = &node->data.list_literal;
+            result.type = RET_LIST;
+            result.value.list_val.element_type = literal->element_type;
+            result.value.list_val.nested_element_type = literal->nested_element_type;
+            result.value.list_val.is_nested = literal->is_nested;
+            result.value.list_val.head = NULL;
+
+            ListNode *current = NULL;
+
+            if (literal->is_nested) {
+                // Handle nested list elements
+                for (int i = 0; i < literal->element_count; ++i) {
+                    ReturnValue nested_list_val = evaluate_expression(literal->elements[i], scope, ret_ctx);
+
+                    if (nested_list_val.type != RET_LIST) {
+                        fprintf(stderr, "\nError: Expected list in nested list literal, got return type %d.\n",
+                                nested_list_val.type);
+                        free_list(result.value.list_val.head);
+                        free_return_value(nested_list_val.type, &nested_list_val);
+                        result.type = RET_NONE;
+                        return result;
+                    }
+
+                    ListElement element;
+                    element.type = VAR_LIST;
+                    element.value.nested_list.element_type = nested_list_val.value.list_val.element_type;
+                    element.value.nested_list.nested_element_type = nested_list_val.value.list_val.nested_element_type;
+                    element.value.nested_list.is_nested = nested_list_val.value.list_val.is_nested;
+                    element.value.nested_list.head = deep_copy_list(nested_list_val.value.list_val.head);
+
+                    // Free the evaluated nested list since we've copied it
+                    free_return_value(nested_list_val.type, &nested_list_val);
+
+                    ListNode *new_node = create_list_node(element);
+                    if (!new_node) {
+                        fprintf(stderr, "\nError: Failed to allocate memory for list node in literal.\n");
+                        free_list(result.value.list_val.head);
+                        result.type = RET_NONE;
+                        return result;
+                    }
+
+                    if (result.value.list_val.head == NULL) {
+                        result.value.list_val.head = new_node;
+                        current = result.value.list_val.head;
+                    } else if (current) {
+                        current->next = new_node;
+                        current = new_node;
+                    }
+                }
+            } else {
+                // Handle regular list elements (primitive types)
+                for (int i = 0; i < literal->element_count; ++i) {
+                    ListElement element;
+                    element.type = literal->element_type;
+
+                    if (element.type == VAR_NUM) {
+                        ReturnValue value_val = evaluate_expression(literal->elements[i], scope, ret_ctx);
+                        if (value_val.type != RET_NUM) {
+                            fprintf(stderr, "\nError: Expected number in list literal, got return type %d.\n",
+                                    value_val.type);
+                            free_list(result.value.list_val.head);
+                            free_return_value(value_val.type, &value_val);
+                            result.type = RET_NONE;
+                            return result;
+                        }
+                        element.value.num_val = value_val.value.num_val;
+                    } else if (element.type == VAR_STR) {
+                        ReturnValue value_val = evaluate_expression(literal->elements[i], scope, ret_ctx);
+                        if (value_val.type != RET_STR) {
+                            fprintf(stderr, "\nError: Expected string in list literal, got return type %d.\n",
+                                    value_val.type);
+                            free_list(result.value.list_val.head);
+                            free_return_value(value_val.type, &value_val);
+                            result.type = RET_NONE;
+                            return result;
+                        }
+                        element.value.str_val = strdup(value_val.value.str_val);
+                        free_return_value(value_val.type, &value_val);
+                    } else {
+                        fprintf(stderr, "\nError: Unsupported element type %d in list literal.\n", element.type);
+                        free_list(result.value.list_val.head);
+                        result.type = RET_NONE;
+                        return result;
+                    }
+
+                    ListNode *new_node = create_list_node(element);
+                    if (!new_node) {
+                        fprintf(stderr, "\nError: Failed to allocate memory for list node in literal.\n");
+                        free_list(result.value.list_val.head);
+                        if (element.type == VAR_STR) free(element.value.str_val);
+                        result.type = RET_NONE;
+                        return result;
+                    }
+
+                    if (result.value.list_val.head == NULL) {
+                        result.value.list_val.head = new_node;
+                        current = result.value.list_val.head;
+                    } else if (current) {
+                        current->next = new_node;
+                        current = new_node;
+                    }
+                }
+            }
+            break;
+        }
         case NODE_EXPR_VARIABLE: {
             const Variable *variable = get_variable(scope, node->data.variable.name);
             if (!variable) {
@@ -125,8 +231,10 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
                     break;
                 case VAR_LIST:
                     result.type = RET_LIST;
-                    result.value.list_val.head = deep_copy_list(variable->value.list_val.head);
                     result.value.list_val.element_type = variable->value.list_val.element_type;
+                    result.value.list_val.nested_element_type = variable->value.list_val.nested_element_type;
+                    result.value.list_val.is_nested = variable->value.list_val.is_nested;
+                    result.value.list_val.head = deep_copy_list(variable->value.list_val.head);
                     break;
                 default:
                     fprintf(stderr, "Unknown variable type: %d\n", variable->type);
@@ -267,15 +375,18 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
         }
 
 
-        case NODE_FUNC_CALL:
-            execute_func_call(&node->data.func_call, scope, ret_ctx);
-            if (ret_ctx->ret_val.type == RET_NONE) {
-                fprintf(stderr, "\nError: Function call returned no value.\n");
-                exit(EXIT_FAILURE);
-            }
-            result.type = ret_ctx->ret_val.type;
-            result.value = ret_ctx->ret_val.value;
-            break;
+        case NODE_FUNC_CALL: {
+             ReturnContext call_ctx = { .is_return = 0, .ret_val = { .type = RET_NONE } };
+             execute_func_call(&node->data.func_call, scope, &call_ctx);
+             if (!call_ctx.is_return || call_ctx.ret_val.type == RET_NONE) {
+                 fprintf(stderr, "\nError: Function call returned no value.\n");
+                 exit(EXIT_FAILURE);
+             }
+
+             result.type = call_ctx.ret_val.type;
+             result.value = call_ctx.ret_val.value;
+             break;
+         }
 
         case NODE_VARIABLE_ACCESS: {
             const VariableAccessNode *access_node = &node->data.variable_access;
@@ -432,79 +543,132 @@ void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnCo
     if (node->init_expr && node->init_expr->type == NODE_LIST_LITERAL) {
         const ListLiteralNode *literal = &node->init_expr->data.list_literal;
 
+        // Check that the list types match
         if (literal->element_type != node->element_type) {
             fprintf(stderr, "\nError: List literal type mismatch for variable '%s'. Expected %d, got %d.\n",
                     node->name, node->element_type, literal->element_type);
             exit(EXIT_FAILURE);
         }
 
-        for (int i = 0; i < literal->element_count; ++i) {
-            ListElement element;
-            element.type = node->element_type;
+        // Handle nested lists
+        if (node->element_type == VAR_LIST && literal->is_nested) {
+            for (int i = 0; i < literal->element_count; ++i) {
+                ListElement element;
+                element.type = VAR_LIST;
 
-            if (element.type == VAR_NUM) {
-                element.value.num_val = evaluate_expression(literal->elements[i], scope, ret_ctx).value.num_val;
-            } else if (element.type == VAR_STR) {
-                ReturnValue value_val = evaluate_expression(literal->elements[i], scope, ret_ctx);
-                if (value_val.type != RET_STR) {
-                    fprintf(stderr, "\nError: Expected string element %d for list '%s', but got type %d.\n",
-                        i, node->name, value_val.type);
+                // Create a nested list by recursively evaluating the nested list literal
+                ReturnValue nested_list_val = evaluate_expression(literal->elements[i], scope, ret_ctx);
+
+                if (nested_list_val.type != RET_LIST) {
+                    fprintf(stderr, "\nError: Expected list element %d for list '%s', but got type %d.\n",
+                            i, node->name, nested_list_val.type);
                     free_list(head);
-                    free_return_value(value_val.type, &value_val);
+                    free_return_value(nested_list_val.type, &nested_list_val);
                     exit(EXIT_FAILURE);
                 }
-                element.value.str_val = strdup(value_val.value.str_val);
-                free_return_value(value_val.type, &value_val);
-                if (!element.value.str_val) {
-                     fprintf(stderr, "\nError: Failed to evaluate string element %d for list '%s'.\n",
-                         i, node->name);
-                     free_list(head);
-                     exit(EXIT_FAILURE);
-                 }
-            } else {
-                 fprintf(stderr, "Internal \nError: Invalid element type %d in list literal for '%s'.\n",
-                     element.type, node->name);
-                 free_list(head);
-                 exit(EXIT_FAILURE);
+
+                // Store the nested list in the current list element
+                element.value.nested_list.element_type        = nested_list_val.value.list_val.element_type;
+                element.value.nested_list.nested_element_type = nested_list_val.value.list_val.nested_element_type;
+                element.value.nested_list.is_nested           = nested_list_val.value.list_val.is_nested;
+                element.value.nested_list.head                 = deep_copy_list(nested_list_val.value.list_val.head);
+
+                // Free the return value - we've copied its contents
+                free_return_value(nested_list_val.type, &nested_list_val);
+
+                // Add the element to our list
+                ListNode *new_node = create_list_node(element);
+                if (!new_node) {
+                    fprintf(stderr, "\nError: Failed to allocate memory for list node for '%s'.\n", node->name);
+                    free_list(head);
+                    exit(EXIT_FAILURE);
+                }
+
+                if (head == NULL) {
+                    head = new_node;
+                    current = head;
+                } else if (current) {
+                    current->next = new_node;
+                    current = new_node;
+                }
             }
+        } else {
+            // Handle regular lists with primitive elements
+            for (int i = 0; i < literal->element_count; ++i) {
+                ListElement element;
+                element.type = node->element_type;
 
-            ListNode *new_node = create_list_node(element);
-             if (!new_node) {
-                  fprintf(stderr, "\nError: Failed to allocate memory for list node for '%s'.\n", node->name);
-                  free_list(head);
-                  if (element.type == VAR_STR) free(element.value.str_val);
-                  exit(EXIT_FAILURE);
-             }
+                if (element.type == VAR_NUM) {
+                    element.value.num_val = evaluate_expression(literal->elements[i], scope, ret_ctx).value.num_val;
+                } else if (element.type == VAR_STR) {
+                    ReturnValue value_val = evaluate_expression(literal->elements[i], scope, ret_ctx);
+                    if (value_val.type != RET_STR) {
+                        fprintf(stderr, "\nError: Expected string element %d for list '%s', but got type %d.\n",
+                                i, node->name, value_val.type);
+                        free_list(head);
+                        free_return_value(value_val.type, &value_val);
+                        exit(EXIT_FAILURE);
+                    }
+                    element.value.str_val = strdup(value_val.value.str_val);
+                    free_return_value(value_val.type, &value_val);
+                    if (!element.value.str_val) {
+                        fprintf(stderr, "\nError: Failed to evaluate string element %d for list '%s'.\n",
+                                i, node->name);
+                        free_list(head);
+                        exit(EXIT_FAILURE);
+                    }
+                } else {
+                    fprintf(stderr, "Internal Error: Invalid element type %d in list literal for '%s'.\n",
+                            element.type, node->name);
+                    free_list(head);
+                    exit(EXIT_FAILURE);
+                }
 
-            if (head == NULL) {
-                head = new_node;
-                current = head;
-            } else if (current != NULL) {
-                current->next = new_node;
-                current = new_node;
+                ListNode *new_node = create_list_node(element);
+                if (!new_node) {
+                    fprintf(stderr, "\nError: Failed to allocate memory for list node for '%s'.\n", node->name);
+                    free_list(head);
+                    if (element.type == VAR_STR) free(element.value.str_val);
+                    exit(EXIT_FAILURE);
+                }
+
+                if (head == NULL) {
+                    head = new_node;
+                    current = head;
+                } else if (current) {
+                    current->next = new_node;
+                    current = new_node;
+                }
             }
         }
     }
 
+    // Create the variable for the list
     const Variable new_list_var = {
         .name = strdup(node->name),
         .type = VAR_LIST,
-        .value = { .list_val = { .element_type = node->element_type, .head = head } }
+        .value = { .list_val = {
+            .element_type = node->element_type,
+            .nested_element_type = node->nested_element_type,
+            .is_nested = node->is_nested_list,
+            .head = head
+        }}
     };
-     if (!new_list_var.name) {
-         fprintf(stderr, "\nError: Failed to allocate memory for list variable name '%s'.\n", node->name);
-         free_list(head);
-         exit(EXIT_FAILURE);
-     }
 
-    hashmap_set(scope, &new_list_var);
+    if (!new_list_var.name) {
+        fprintf(stderr, "\nError: Failed to allocate memory for list variable name '%s'.\n", node->name);
+        free_list(head);
+        exit(EXIT_FAILURE);
+    }
+
+    hashmap_set(scope ? scope : variable_map, &new_list_var);
 
     if (hashmap_oom(scope ? scope : variable_map)) {
-         fprintf(stderr, "\nError: Out of memory while storing list variable '%s'.\n", node->name);
-         free(new_list_var.name);
-         free_list(head);
-         exit(EXIT_FAILURE);
-     }
+        fprintf(stderr, "\nError: Out of memory while storing list variable '%s'.\n", node->name);
+        free(new_list_var.name);
+        free_list(head);
+        exit(EXIT_FAILURE);
+    }
 }
 
 char *get_string_value(const ReturnValue value) {

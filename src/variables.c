@@ -65,92 +65,136 @@ ListNode *create_list_node(const ListElement element) {
 
 void free_list(ListNode *head) {
     ListNode *current = head;
-
     while (current != NULL) {
-        ListNode *next_node = current->next;
-        if (current->element.type == VAR_STR && current->element.value.str_val != NULL) {
-            free(current->element.value.str_val);
-            current->element.value.str_val = NULL; // Good practice
-        }
-        free(current);
+        ListNode *next = current->next;
 
-        current = next_node;
+        if (current->element.type == VAR_STR && current->element.value.str_val) {
+            free(current->element.value.str_val);
+        } else if (current->element.type == VAR_LIST && current->element.value.nested_list.head) {
+            free_list(current->element.value.nested_list.head);
+        }
+
+        free(current);
+        current = next;
     }
 }
 
-char *list_to_string(const ListNode *head, const VarType element_type) {
-    char buffer[4096] = {0};
+char *list_to_string(const ListNode *head, VarType element_type) {
+    size_t buffer_size = 256;
+    char *buffer = safe_malloc(buffer_size);
+    size_t length = 0;
+
+    buffer[length++] = '[';
+
     const ListNode *current = head;
-    strcat(buffer, "[");
     while (current != NULL) {
+        if (current != head) {
+            buffer[length++] = ',';
+            buffer[length++] = ' ';
+        }
+
+        // Ensure we have enough space in the buffer
+        if (length + 128 >= buffer_size) {
+            buffer_size *= 2;
+            buffer = safe_realloc(buffer, buffer_size);
+        }
+
         if (element_type == VAR_NUM) {
-            const char *trimmed = trim_double(current->element.value.num_val);
-            strncat(buffer, trimmed, strlen(trimmed));
+            char *num_str = trim_double(current->element.value.num_val);
+            size_t num_len = strlen(num_str);
+
+            // Ensure we have enough space for the number
+            if (length + num_len + 1 >= buffer_size) {
+                buffer_size = length + num_len + 128;
+                buffer = safe_realloc(buffer, buffer_size);
+            }
+
+            strcpy(buffer + length, num_str);
+            length += num_len;
+            free(num_str);
+
         } else if (element_type == VAR_STR) {
-            strncat(buffer, current->element.value.str_val, strlen(current->element.value.str_val));
+            char *str_val = current->element.value.str_val;
+            size_t str_len = strlen(str_val);
+
+            // Ensure we have enough space for the string
+            if (length + str_len + 3 >= buffer_size) {
+                buffer_size = length + str_len + 128;
+                buffer = safe_realloc(buffer, buffer_size);
+            }
+
+            buffer[length++] = '"';
+            strcpy(buffer + length, str_val);
+            length += str_len;
+            buffer[length++] = '"';
+
+        } else if (element_type == VAR_LIST) {
+            // Handle nested list by recursively converting it to string
+            char *nested_str = list_to_string(current->element.value.nested_list.head,
+                                           current->element.value.nested_list.element_type);
+            size_t nested_len = strlen(nested_str);
+
+            // Ensure we have enough space for the nested list
+            if (length + nested_len + 1 >= buffer_size) {
+                buffer_size = length + nested_len + 128;
+                buffer = safe_realloc(buffer, buffer_size);
+            }
+
+            strcpy(buffer + length, nested_str);
+            length += nested_len;
+            free(nested_str);
         }
-        if (current->next != NULL) {
-            strcat(buffer, ", ");
-        }
+
         current = current->next;
     }
-    strcat(buffer, "]\n");
-    return strdup(buffer);
-}
 
-ListNode *deep_copy_list(const ListNode *head) {
-    if (!head) {
-        return NULL;
+    // Ensure we have space for the closing bracket
+    if (length + 2 >= buffer_size) {
+        buffer_size = length + 32;
+        buffer = safe_realloc(buffer, buffer_size);
     }
 
-    const VarType element_type = head->element.type;
+    buffer[length++] = ']';
+    buffer[length] = '\0';
+
+    return buffer;
+}
+
+
+ListNode *deep_copy_list(const ListNode *head) {
+    if (!head) return NULL;
 
     ListNode *new_head = NULL;
-    ListNode *new_tail = NULL;
-    const ListNode *current = head;
+    ListNode *current = NULL;
 
-    while (current != NULL) {
+    const ListNode *src = head;
+    while (src != NULL) {
         ListElement new_element;
-        new_element.type = element_type;
+        new_element.type = src->element.type;
 
-        if (element_type == VAR_NUM) {
-            new_element.value.num_val = current->element.value.num_val;
-        } else if (element_type == VAR_STR) {
-            if (current->element.value.str_val != NULL) {
-                new_element.value.str_val = strdup(current->element.value.str_val);
-                if (!new_element.value.str_val) {
-                    fprintf(stderr, "\nError: Failed to duplicate string during list copy.\n");
-                    free_list(new_head);
-                    return NULL;
-                }
-            } else {
-                new_element.value.str_val = NULL;
-            }
-        } else {
-            fprintf(stderr, "Internal \nError: Unsupported element type %d during list copy.\n", element_type);
-            free_list(new_head);
-            return NULL;
+        if (new_element.type == VAR_NUM) {
+            new_element.value.num_val = src->element.value.num_val;
+        } else if (new_element.type == VAR_STR) {
+            new_element.value.str_val = strdup(src->element.value.str_val);
+        } else if (new_element.type == VAR_LIST) {
+            // Handle nested lists with recursive deep copy
+            new_element.value.nested_list.element_type = src->element.value.nested_list.element_type;
+            new_element.value.nested_list.nested_element_type = src->element.value.nested_list.nested_element_type;
+            new_element.value.nested_list.is_nested = src->element.value.nested_list.is_nested;
+            new_element.value.nested_list.head = deep_copy_list(src->element.value.nested_list.head);
         }
 
         ListNode *new_node = create_list_node(new_element);
-        if (!new_node) {
-            fprintf(stderr, "\nError: Failed to allocate node during list copy.\n");
-            if (element_type == VAR_STR && new_element.value.str_val != NULL) {
-                free(new_element.value.str_val);
-            }
-            free_list(new_head);
-            return NULL;
-        }
 
         if (new_head == NULL) {
             new_head = new_node;
-            new_tail = new_node;
-        } else if (new_tail != NULL) {
-            new_tail->next = new_node;
-            new_tail = new_node;
+            current = new_head;
+        } else {
+            current->next = new_node;
+            current = new_node;
         }
 
-        current = current->next;
+        src = src->next;
     }
 
     return new_head;

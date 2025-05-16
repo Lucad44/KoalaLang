@@ -141,6 +141,8 @@ typedef struct {
 
 typedef struct {
     VarType element_type;
+    VarType nested_element_type; // Type of elements in nested lists
+    bool is_nested;              // Whether this is a list of lists
     ASTNode **elements;
     int element_count;
 } ListLiteralNode;
@@ -148,8 +150,11 @@ typedef struct {
 typedef struct {
     char *name;
     VarType element_type;
+    VarType nested_element_type; // Type of elements in nested lists
+    bool is_nested_list;         // Whether this is a list of lists
     ASTNode *init_expr;
 } ListDeclNode;
+
 
 typedef struct {
     char *name;

@@ -41,4 +41,8 @@ ASTNode *parse_list_literal(Parser *parser, VarType expected_element_type);
 
 ASTNode *parse_expression_statement(Parser *parser);
 
+ASTNode *parse_list_type(Parser *parser);
+
+ASTNode *parse_nested_list_literal(Parser *parser, VarType list_type, VarType nested_type);
+
 #endif

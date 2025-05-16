@@ -50,6 +50,10 @@ static void __attribute__((constructor)) init___c_function_meta_map() {
         .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1});
     hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "factorial", .func = (void *) __factorial,
         .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1});
+    hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "gamma", .func = (void *) __gamma,
+        .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1});
+    hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "fibonacci", .func = (void *) __fibonacci,
+        .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1});
     hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "ln", .func = (void *) __ln,
         .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1});
     hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "log10", .func = (void *) __log10,
@@ -98,6 +102,15 @@ hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arctanh", .fu
 hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arccoth", .func = (void *) __arccoth, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
 hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arcsech", .func = (void *) __arcsech, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
 hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "arccsch", .func = (void *) __arccsch, .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1 });
+    hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "integrate", .func = (void *) __integrate,
+           .dispatcher = dispatch_string_to_string, .ret_type = TYPE_STRING, .param_types = {TYPE_STRING}, .param_count = 1});
+    hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "plot_function", .func = (void *) __plot_function,
+           .dispatcher = dispatch_string_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING}, .param_count = 1});
+    hashmap_set(__c_functions_meta_map, &(__C_FunctionMeta) { .name = "plot_multiple_functions", .func = (void *) __plot_multiple_functions,
+           .dispatcher = dispatch_string_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING_ARRAY}, .param_count = 1});
+
+    /*const char *exprs[] = { "x**2", "sin(x)", "sqrt(x)", "exp(x**4.44)"};
+    __plot_multiple_functions(exprs, 4);*/
 }
 
 int __c_function_meta_compare(const void *a, const void *b, void *udata) {
@@ -235,11 +248,41 @@ double __inverse(const double n) {
 }
 
 double __factorial(const double n) {
-    if (n <= 0) {
-        printf("\nError: Factorial not defined for negative integers.\n");
+    if (n < 0 || floor(n) != n) {
+        printf("\nError: Factorial not defined for negative integers or non-integers.\n");
         exit(EXIT_FAILURE);
     }
-    return tgamma(n + 1);
+    double result = 1;
+    for (int i = 2; i <= n; i++) {
+        result *= i;
+    }
+    return result;
+}
+
+double __gamma(const double n) {
+    if (n <= 0) {
+        fprintf(stderr, "\nError: gamma not defined for negative or zero integers.\n");
+        exit(EXIT_FAILURE);
+    }
+    return tgamma(n);
+}
+
+double __fibonacci(const double n) {
+    if (n < 0) {
+        fprintf(stderr, "\nError: fibonacci not defined for negative integers.\n");
+        exit(EXIT_FAILURE);
+    }
+    if (n <= 1) {
+        return n;
+    }
+    int n1 = 0, n2 = 1;
+    double result = 0;
+    for (int i = 2; i <= n; i++) {
+        result = n1 + n2;
+        n1 = n2;
+        n2 = result;
+    }
+    return result;
 }
 
 double __ln(const double n) {
@@ -426,6 +469,68 @@ double __arccsch(const double n) {
     return asinh(1.0 / n);
 }
 
+char *__integrate(const char *input_expr) {
+   /* basic x, expr, result;
+    basic_new_stack(x);
+    basic_new_stack(expr);
+    basic_new_stack(result);
+
+    symbol_set(x, "x");
+    if (basic_parse(expr, input_expr) != 0) {
+        fprintf(stderr, "\nError: Failed to parse expression: %s\n", input_expr);
+        basic_free_stack(x);
+        basic_free_stack(expr);
+        basic_free_stack(result);
+        exit(EXIT_FAILURE);
+    }
+    basic_integrate(result, expr, x);
+    char *result_str = basic_str(result);
+    basic_free_stack(x);
+    basic_free_stack(expr);
+    basic_free_stack(result);
+    return result_str;*/
+    return "TODO";
+}
+
+void __plot_function(const char *input_expr) {
+    FILE *gp = popen("gnuplot -persistent", "w");
+    if (!gp) {
+        fprintf(stderr, "\nWarning: gnuplot not found. Can't plot function.\n");
+        return;
+    }
+
+    fprintf(gp, "set title 'Plot of %s'\n", input_expr);
+    fprintf(gp, "set xlabel 'X-axis'\n");
+    fprintf(gp, "set ylabel 'Y-axis'\n");
+    fprintf(gp, "plot %s with lines lw 2 lc rgb 'blue'\n", input_expr);
+    fclose(gp);
+}
+
+void __plot_multiple_functions(const char *input_exprs[], const int count) {
+    FILE *gp = popen("gnuplot -persistent", "w");
+    if (gp == NULL) {
+        fprintf(stderr, "Error: gnuplot not found.\n");
+        return;
+    }
+
+    fprintf(gp, "set title 'Multiple Function Plot'\n");
+    fprintf(gp, "set xlabel 'X-axis'\n");
+    fprintf(gp, "set ylabel 'Y-axis'\n");
+
+    fprintf(gp, "plot ");
+
+    for (int i = 0; i < count; i++) {
+        const char *color = colors[i % color_count];
+        fprintf(gp, "%s with lines lw 2 lc rgb '%s' title '%s'", input_exprs[i], color, input_exprs[i]);
+        if (i < count - 1)
+            fprintf(gp, ", ");
+        else
+            fprintf(gp, "\n");
+    }
+
+    fclose(gp);
+}
+
 void dispatch_double_to_int(void *func_ptr, void **args, void *ret_out) {
     int (*func)(double) = (int (*)(double)) func_ptr;
     const double n = *(double *) args[0];
@@ -443,4 +548,23 @@ void dispatch_double_double_to_double(void *func_ptr, void **args, void *ret_out
     const double a = *(double *) args[0];
     const double b = *(double *) args[1];
     *(double *) ret_out = func(a, b);
+}
+
+void dispatch_string_to_string(void *func_ptr, void **args, void *ret_out) {
+    char *(*func)(char *) = (char *(*)(char *)) func_ptr;
+    char *input_expr = *(char **) args[0];
+    *(char **) ret_out = func(input_expr);
+}
+
+void dispatch_string_to_void(void *func_ptr, void **args, void *ret_out) {
+    (void) ret_out;
+    void (*func)(const char *) = (void (*)(const char *)) func_ptr;
+    func(*(const char**) args[0]);
+}
+
+void dispatch_const_char_ptr_array_to_void(void* fptr, void** args, void* ret_out) {
+    (void)ret_out;
+    void (*func)(const char*[]) = (void (*)(const char*[]))fptr;
+    const char** exprs = (const char**)args[0];
+    func(exprs);
 }

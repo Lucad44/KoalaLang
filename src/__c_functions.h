@@ -3,11 +3,18 @@
 
 #include "hashmap.h"
 
+static const char *colors[] = {
+    "red", "blue", "green", "magenta", "cyan", "orange", "black", "violet"
+};
+
+static const int color_count = sizeof(colors) / sizeof(colors[0]);
+
 typedef enum {
     TYPE_INT,
     TYPE_FLOAT,
     TYPE_DOUBLE,
     TYPE_STRING,
+    TYPE_STRING_ARRAY,
     TYPE_VOID
 } __C_DataType;
 
@@ -61,6 +68,10 @@ double __abs(double n);
 double __inverse(double n);
 
 double __factorial(double n);
+
+double __gamma(double n);
+
+double __fibonacci(double n);
 
 double __ln(double n);
 
@@ -122,10 +133,22 @@ double __arcsech(double n);
 
 double __arccsch(double n);
 
+char *__integrate(const char *input_expr);
+
+void __plot_function(const char *input_expr);
+
+void __plot_multiple_functions(const char *input_exprs[], int count);
+
 void dispatch_double_to_int(void *func_ptr, void **args, void *ret_out);
 
 void dispatch_double_to_double(void *func_ptr, void **args, void *ret_out);
 
 void dispatch_double_double_to_double(void *func_ptr, void **args, void *ret_out);
+
+void dispatch_string_to_string(void *func_ptr, void **args, void *ret_out);
+
+void dispatch_string_to_void(void *func_ptr, void **args, void *ret_out);
+
+void dispatch_const_char_ptr_array_to_void(void* fptr, void** args, void* ret_out);
 
 #endif //__C_FUNCTIONS_H
