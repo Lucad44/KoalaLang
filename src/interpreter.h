@@ -69,10 +69,12 @@ void execute_return(const ReturnNode *node, struct hashmap *scope, ReturnContext
 
 void execute_list_decl(const ListDeclNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
 
-void execute_assignment(const AssignmentNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
+void execute_assignment(const AssignmentNode *node, struct hashmap *scope);
 
 ReturnValue evaluate_str_access(const VariableAccessNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
 
 char *get_string_value(ReturnValue value);
+
+ReturnValue evaluate_variable_access(const VariableAccessNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
 
 #endif //INTERPRETER_H

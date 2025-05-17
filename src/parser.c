@@ -97,9 +97,10 @@ ASTNode *parse_primary(Parser *parser) {
             char* var_name = node->data.variable.name;
             advance(parser);
 
+            // Handle array/list access with brackets
             if (parser->current_token.type == TOKEN_LBRACKET) {
+                // First index - transform to variable access node
                 advance(parser);
-
                 ASTNode *index_expr = parse_expression(parser);
 
                 if (parser->current_token.type != TOKEN_RBRACKET) {
@@ -111,6 +112,32 @@ ASTNode *parse_primary(Parser *parser) {
                 node->type = NODE_VARIABLE_ACCESS;
                 node->data.variable_access.name = var_name;
                 node->data.variable_access.index_expr = index_expr;
+
+                // Handle nested indices (for multidimensional arrays/nested lists)
+                while (parser->current_token.type == TOKEN_LBRACKET) {
+                    // Create a new variable access node that will access the result of the previous access
+                    ASTNode *outer_access = safe_malloc(sizeof(ASTNode));
+                    *outer_access = *node; // Copy the current node
+
+                    // Parse the next index
+                    advance(parser);
+                    ASTNode *next_index_expr = parse_expression(parser);
+
+                    if (parser->current_token.type != TOKEN_RBRACKET) {
+                        fprintf(stderr, "\nError: Expected ']' after nested index expression.\n");
+                        exit(EXIT_FAILURE);
+                    }
+                    advance(parser);
+
+                    // Create a new variable access node that represents the nested access
+                    node->type = NODE_VARIABLE_ACCESS;
+                    node->data.variable_access.name = NULL; // NULL name indicates this is a nested access
+                    node->data.variable_access.index_expr = next_index_expr;
+
+                    // Attach the previous access as a "parent" node
+                    // We'll need to modify the interpreter to handle this case
+                    node->data.variable_access.parent_expr = outer_access;
+                }
             }
             break;
         default:
@@ -595,7 +622,7 @@ ASTNode *parse_function_call(Parser *parser) {
     while (parser->current_token.type != TOKEN_RPAREN) {
         ASTNode *arg = NULL;
         if (parser->current_token.type == TOKEN_LBRACKET) {
-            arg = parse_list_literal(parser, VAR_NUM);
+            arg = parse_list_literal(parser);
         } else {
             arg = parse_expression(parser);
         }
@@ -704,59 +731,93 @@ ASTNode *parse_program(Parser *parser) {
     return block;
 }
 
-ASTNode *parse_list_literal(Parser *parser, VarType expected_element_type) {
+ASTNode *parse_list_literal(Parser *parser) {
     if (parser->current_token.type != TOKEN_LBRACKET) {
-
-        fprintf(stderr, "Internal Parser \nError: Expected '[' for list literal.\n");
+        fprintf(stderr, "Internal Parser Error: Expected '[' for list literal.\n");
         exit(EXIT_FAILURE);
     }
-    advance(parser);
+    advance(parser); // consume '['
+
+    // Collect elements
     ASTNode **elements = NULL;
     int element_count = 0;
+
     while (parser->current_token.type != TOKEN_RBRACKET) {
-        ASTNode *element_expr = parse_expression(parser);
-        if (expected_element_type == VAR_NUM && element_expr->type != NODE_NUM_LITERAL  && element_expr->type != NODE_EXPR_VARIABLE && element_expr->type != NODE_EXPR_BINARY) {
-             fprintf(stderr, "\nError: Expected numeric literal or expression for num list element, got node type %d.\n", element_expr->type);
-
-             exit(EXIT_FAILURE);
+        ASTNode *elem;
+        if (parser->current_token.type == TOKEN_LBRACKET) {
+            // Nested list: recurse
+            elem = parse_list_literal(parser);
+        } else {
+            // Primitive literal: number or string
+            if (parser->current_token.type == TOKEN_NUMBER) {
+                elem = safe_malloc(sizeof(ASTNode));
+                elem->type = NODE_NUM_LITERAL;
+                elem->data.num_literal.num_val = parser->current_token.num_value;
+                advance(parser);
+            } else if (parser->current_token.type == TOKEN_STRING) {
+                elem = safe_malloc(sizeof(ASTNode));
+                elem->type = NODE_STR_LITERAL;
+                elem->data.str_literal.str_val = strdup(parser->current_token.str_value);
+                advance(parser);
+            } else {
+                fprintf(stderr, "Unexpected token in list literal: %d\n", parser->current_token.type);
+                exit(EXIT_FAILURE);
+            }
         }
-        if (expected_element_type == VAR_STR && element_expr->type != NODE_STR_LITERAL  && element_expr->type != NODE_EXPR_VARIABLE ) {
-            fprintf(stderr, "\nError: Expected string literal or variable for str list element, got node type %d.\n", element_expr->type);
 
-            exit(EXIT_FAILURE);
-        }
+        // Append to array
         elements = safe_realloc(elements, (element_count + 1) * sizeof(ASTNode *));
-        elements[element_count++] = element_expr;
+        elements[element_count++] = elem;
 
-        if (parser->current_token.type == TOKEN_RBRACKET) {
-            break;
+        // Comma separation
+        if (parser->current_token.type == TOKEN_COMMA) {
+            advance(parser);
+            continue;
         }
-
-        if (parser->current_token.type != TOKEN_COMMA) {
-            fprintf(stderr, "Expected ',' or ']' in list literal, got %d\n", parser->current_token.type);
-
-             for(int i = 0; i < element_count; ++i) free_ast(elements[i]);
-             free(elements);
-            exit(EXIT_FAILURE);
-        }
-        advance(parser);
+        break;
     }
+
     if (parser->current_token.type != TOKEN_RBRACKET) {
-         fprintf(stderr, "Expected ']' to close list literal, got %d\n", parser->current_token.type);
-
-         exit(EXIT_FAILURE);
+        fprintf(stderr, "Expected ']' at end of list literal, got %d\n", parser->current_token.type);
+        exit(EXIT_FAILURE);
     }
-    advance(parser);
-    ASTNode *list_node = safe_malloc(sizeof(ASTNode));
-    list_node->type = NODE_LIST_LITERAL;
-    list_node->data.list_literal.element_type = expected_element_type;
-    list_node->data.list_literal.is_nested = false;
-    list_node->data.list_literal.nested_element_type = VAR_NUM;
-    list_node->data.list_literal.elements = elements;
-    list_node->data.list_literal.element_count = element_count;
+    advance(parser); // consume ']'
 
-    return list_node;
+    // Determine list metadata
+    VarType element_type;
+    VarType nested_element_type = VAR_NUM; /* default */
+    bool is_nested = false;
+
+    if (element_count > 0 && elements && elements[0]->type == NODE_LIST_LITERAL) {
+        // Immediate child is a list
+        is_nested = true;
+        element_type = VAR_LIST;
+        // nested_element_type = type of elements inside those child lists
+        nested_element_type = elements[0]->data.list_literal.element_type;
+    } else if (element_count > 0 && elements) {
+        // primitives
+        is_nested = false;
+        if (elements[0]->type == NODE_NUM_LITERAL) {
+            element_type = VAR_NUM;
+        } else {
+            element_type = VAR_STR;
+        }
+    } else {
+        // Empty list defaults to num
+        element_type = VAR_NUM;
+    }
+
+    // Build AST node
+    ASTNode *node = safe_malloc(sizeof(ASTNode));
+    node->type = NODE_LIST_LITERAL;
+    node->data.list_literal.element_type = element_type;
+    node->data.list_literal.nested_element_type = nested_element_type;
+    node->data.list_literal.is_nested = is_nested;
+    node->data.list_literal.elements = elements;
+    node->data.list_literal.element_count = element_count;
+    return node;
 }
+
 
 ASTNode *parse_list_declaration(Parser *parser) {
     advance(parser); // Skip past the 'list' keyword
@@ -781,13 +842,7 @@ ASTNode *parse_list_declaration(Parser *parser) {
         advance(parser);
 
         if (parser->current_token.type == TOKEN_LBRACKET) {
-            if (is_nested_list) {
-                // Parse a nested list literal
-                init_expr = parse_nested_list_literal(parser, element_type, nested_element_type);
-            } else {
-                // Parse a normal list literal
-                init_expr = parse_list_literal(parser, element_type);
-            }
+            init_expr = parse_list_literal(parser);
         } else {
             fprintf(stderr, "Expected list literal '[' after '=' for list initialization\n");
             free(name);
@@ -831,30 +886,65 @@ ASTNode *parse_expression_statement(Parser *parser) {
     ASTNode *node = NULL;
     switch (parser->current_token.type) {
         case TOKEN_LBRACKET: {
-            advance(parser);
-            ASTNode *index_expr = parse_expression(parser);
-            if (parser->current_token.type != TOKEN_RBRACKET) {
-                fprintf(stderr, "\nError: Expected ']' after list index in assignment target.\n");
-                free(target_name);
-                free_ast(index_expr);
-                exit(EXIT_FAILURE);
-            }
-            advance(parser);
-            if (parser->current_token.type != TOKEN_OPERATOR_EQUAL) {
-                 fprintf(stderr, "\nError: Expected '=' after list index target '[]' in assignment.\n");
-                 free(target_name);
-                 free_ast(index_expr);
-                 exit(EXIT_FAILURE);
-            }
-            advance(parser);
-            ASTNode *value_expr = parse_expression(parser);
-            node = safe_malloc(sizeof(ASTNode));
-            node->type = NODE_ASSIGNMENT;
-            node->data.assignment.target_name = target_name;
-            node->data.assignment.index_expr = index_expr;
-            node->data.assignment.value_expr = value_expr;
-            break;
+    // --- 1) parse the *first* [ expr ]  ---
+    advance(parser);                              // skip '['
+    ASTNode *first_idx = parse_expression(parser);
+    if (parser->current_token.type != TOKEN_RBRACKET) {
+        fprintf(stderr, "\nError: Expected ']' after list index in assignment target.\n");
+        free(target_name);
+        free_ast(first_idx);
+        exit(EXIT_FAILURE);
+    }
+    advance(parser);                              // skip ']'
+
+    // --- 2) build the initial access node: matrix[first_idx] ---
+    ASTNode *access = safe_malloc(sizeof(ASTNode));
+    access->type = NODE_VARIABLE_ACCESS;
+    access->data.variable_access.name        = target_name;
+    access->data.variable_access.index_expr  = first_idx;
+    access->data.variable_access.parent_expr = NULL;
+
+    // --- 3) now wrap any further “[ expr ]” on top of that ---
+    while (parser->current_token.type == TOKEN_LBRACKET) {
+        advance(parser);                          // skip '['
+        ASTNode *idx = parse_expression(parser);
+        if (parser->current_token.type != TOKEN_RBRACKET) {
+            fprintf(stderr, "\nError: Expected ']' after list index in assignment target.\n");
+            free_ast(idx);
+            free_ast(access);
+            exit(EXIT_FAILURE);
         }
+        advance(parser);                          // skip ']'
+
+        ASTNode *wrapper = safe_malloc(sizeof(ASTNode));
+        wrapper->type = NODE_VARIABLE_ACCESS;
+        wrapper->data.variable_access.name        = NULL;   // nested
+        wrapper->data.variable_access.index_expr  = idx;
+        wrapper->data.variable_access.parent_expr = access;
+        access = wrapper;
+    }
+
+    // --- 4) require and consume the '='  ---
+    if (parser->current_token.type != TOKEN_OPERATOR_EQUAL) {
+        fprintf(stderr, "\nError: Expected '=' after list index target in assignment.\n");
+        free_ast(access);
+        exit(EXIT_FAILURE);
+    }
+    advance(parser);
+
+    // --- 5) parse the RHS expression  ---
+    ASTNode *value_expr = parse_expression(parser);
+
+    // --- 6) package it all into one assignment node  ---
+    node = safe_malloc(sizeof(ASTNode));
+    node->type = NODE_ASSIGNMENT;
+    node->data.assignment.target_name   = NULL;       // we're using target_access instead
+    node->data.assignment.index_expr    = NULL;
+    node->data.assignment.target_access = access;
+    node->data.assignment.value_expr    = value_expr;
+    break;
+}
+
         case TOKEN_OPERATOR_EQUAL: {
             advance(parser);
             ASTNode *value_expr = parse_expression(parser);
@@ -939,76 +1029,83 @@ ASTNode *parse_list_type(Parser *parser) {
     return type_node;
 }
 
-ASTNode *parse_nested_list_literal(Parser *parser, VarType list_type, VarType nested_type) {
-    if (parser->current_token.type != TOKEN_LBRACKET) {
-        fprintf(stderr, "Internal Parser Error: Expected '[' for nested list literal.\n");
+ASTNode *parse_assignment(Parser *parser) {
+    if (parser->current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "\nError: Expected variable name for assignment.\n");
         exit(EXIT_FAILURE);
     }
 
+    char *target_name = strdup(parser->current_token.lexeme);
     advance(parser);
 
-    ASTNode **elements = NULL;
-    int element_count = 0;
+    // Handle array/list indexing with brackets
+    ASTNode *first_index = NULL;
+    ASTNode *parent_access = NULL;
 
-    while (parser->current_token.type != TOKEN_RBRACKET) {
-        if (parser->current_token.type == TOKEN_LBRACKET) {
-            // This is a nested list element
-            ASTNode *element_expr;
+    // Process nested indices if any
+    while (parser->current_token.type == TOKEN_LBRACKET) {
+        advance(parser);
+        ASTNode *index_expr = parse_expression(parser);
 
-            if (nested_type == VAR_LIST) {
-                // Multi-level nesting (list of list of list...)
-                element_expr = parse_nested_list_literal(parser, nested_type, nested_type);
-            } else {
-                // Single level nesting (list of list of primitives)
-                element_expr = parse_list_literal(parser, nested_type);
-            }
-
-            elements = safe_realloc(elements, (element_count + 1) * sizeof(ASTNode *));
-            elements[element_count++] = element_expr;
-        } else {
-            fprintf(stderr, "Expected '[' for nested list element, got token type %d\n",
-                    parser->current_token.type);
-
-            for (int i = 0; i < element_count; ++i) {
-                free_ast(elements[i]);
-            }
-            free(elements);
-            exit(EXIT_FAILURE);
-        }
-
-        if (parser->current_token.type == TOKEN_RBRACKET) {
-            break;
-        }
-
-        if (parser->current_token.type != TOKEN_COMMA) {
-            fprintf(stderr, "Expected ',' or ']' in nested list literal, got token type %d\n",
-                    parser->current_token.type);
-
-            for (int i = 0; i < element_count; ++i) {
-                free_ast(elements[i]);
-            }
-            free(elements);
+        if (parser->current_token.type != TOKEN_RBRACKET) {
+            fprintf(stderr, "\nError: Expected ']' after index expression.\n");
             exit(EXIT_FAILURE);
         }
         advance(parser);
+
+        if (first_index == NULL) {
+            // First index - remember it
+            first_index = index_expr;
+        } else {
+            // Create a chained access for nested indices
+            ASTNode *access_node = safe_malloc(sizeof(ASTNode));
+            access_node->type = NODE_VARIABLE_ACCESS;
+
+            if (parent_access == NULL) {
+                // This is the second index in the chain
+                access_node->data.variable_access.name = target_name;
+                access_node->data.variable_access.index_expr = first_index;
+                parent_access = access_node;
+            } else {
+                // Link to previous access node in the chain
+                access_node->data.variable_access.name = NULL;  // Indicates nested access
+                access_node->data.variable_access.index_expr = index_expr;
+                access_node->data.variable_access.parent_expr = parent_access;
+                parent_access = access_node;
+            }
+        }
     }
 
-    if (parser->current_token.type != TOKEN_RBRACKET) {
-        fprintf(stderr, "Expected ']' to close nested list literal, got token type %d\n",
-                parser->current_token.type);
+    if (parser->current_token.type != TOKEN_OPERATOR_EQUAL) {
+        fprintf(stderr, "\nError: Expected '=' after variable name or indexing.\n");
         exit(EXIT_FAILURE);
     }
     advance(parser);
 
-    // Create the list literal node
-    ASTNode *list_node = safe_malloc(sizeof(ASTNode));
-    list_node->type = NODE_LIST_LITERAL;
-    list_node->data.list_literal.element_type = list_type;
-    list_node->data.list_literal.nested_element_type = nested_type;
-    list_node->data.list_literal.elements = elements;
-    list_node->data.list_literal.element_count = element_count;
-    list_node->data.list_literal.is_nested = true;
+    ASTNode *value_expr = parse_expression(parser);
 
-    return list_node;
+    if (parser->current_token.type != TOKEN_SEMICOLON) {
+        fprintf(stderr, "\nError: Expected ';' after assignment expression.\n");
+        exit(EXIT_FAILURE);
+    }
+    advance(parser);
+
+    ASTNode *node = safe_malloc(sizeof(ASTNode));
+    node->type = NODE_ASSIGNMENT;
+
+    if (parent_access != NULL) {
+        // We have nested access - this is handled specially
+        node->data.assignment.target_name = NULL;  // Indicates nested assignment
+        node->data.assignment.index_expr = NULL;   // Not used for nested assignment
+        node->data.assignment.target_access = parent_access;  // Pass the access AST
+        node->data.assignment.value_expr = value_expr;
+    } else {
+        // Standard assignment with at most one index
+        node->data.assignment.target_name = target_name;
+        node->data.assignment.index_expr = first_index;  // May be NULL for direct assignment
+        node->data.assignment.target_access = NULL;      // Not used for standard assignment
+        node->data.assignment.value_expr = value_expr;
+    }
+
+    return node;
 }
-

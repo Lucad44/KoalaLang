@@ -156,15 +156,17 @@ typedef struct {
 } ListDeclNode;
 
 
-typedef struct {
-    char *name;
-    ASTNode *index_expr;
+typedef struct VariableAccessNode {
+    char *name;          // Variable name (NULL for nested access)
+    ASTNode *index_expr; // Index expression
+    ASTNode *parent_expr; // Parent expression for nested access
 } VariableAccessNode;
 
 typedef struct {
-    char *target_name;
-    ASTNode *index_expr;
-    ASTNode *value_expr;
+    char *target_name;       // NULL for nested assignment
+    ASTNode *index_expr;     // First index (only used for simple assignments)
+    ASTNode *target_access;  // Used for nested access assignments
+    ASTNode *value_expr;     // The value to assign
 } AssignmentNode;
 
 struct ASTNode {

@@ -388,71 +388,9 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
              break;
          }
 
-        case NODE_VARIABLE_ACCESS: {
-            const VariableAccessNode *access_node = &node->data.variable_access;
-            Variable *var = get_variable(scope, access_node->name);
-            if (!var) {
-                fprintf(stderr, "\nError: Variable '%s' not found.\n", access_node->name);
-                exit(EXIT_FAILURE);
-            }
-            if (var->type == VAR_STR) {
-                return evaluate_str_access(&node->data.variable_access, scope, ret_ctx);
-            } else if (var->type == VAR_LIST) {
-                int list_size = 0;
-                const ListNode *counter_node = var->value.list_val.head;
-                while (counter_node != NULL) {
-                    list_size++;
-                    counter_node = counter_node->next;
-                }
-                ReturnContext index_eval_ctx = { .is_return = 0, .ret_val.type = RET_NONE };
-                const double index_val_double = evaluate_expression(access_node->index_expr, scope, &index_eval_ctx).value.num_val;
-                if (index_val_double != floor(index_val_double)) {
-                     fprintf(stderr, "\nError: List index for '%s' must be an integer, got %f.\n",
-                             access_node->name, index_val_double);
-                     exit(EXIT_FAILURE);
-                }
-
-                int index = (int) index_val_double;
-                if (index < 0) {
-                    index = list_size + index;
-                }
-                if (index < 0 || index >= list_size) {
-                    fprintf(stderr, "\nError: List index %d (calculated from %f) out of bounds for list '%s' of size %d.\n",
-                            index, index_val_double, access_node->name, list_size);
-                    exit(EXIT_FAILURE);
-                }
-                const ListNode *current = var->value.list_val.head;
-                int count = 0;
-                while (count < index) {
-                    current = current->next;
-                    count++;
-                }
-
-                if (var->value.list_val.element_type == VAR_NUM) {
-                    if (current->element.type == VAR_NUM) {
-                        result.type = RET_NUM;
-                        result.value.num_val = current->element.value.num_val;
-                    } else {
-                        fprintf(stderr, "Internal \nError: List '%s' element type mismatch at index %d.\n", access_node->name, index);
-                        exit(EXIT_FAILURE);
-                    }
-                } else if (var->value.list_val.element_type == VAR_STR) {
-                    if (current->element.type == VAR_STR) {
-                        result.type = RET_STR;
-                        result.value.str_val = current->element.value.str_val;
-                    } else {
-                        fprintf(stderr, "Internal \nError: List '%s' element type mismatch at index %d.\n", access_node->name, index);
-                        exit(EXIT_FAILURE);
-                    }
-                } else {
-                    fprintf(stderr, "Internal \nError: Unknown list element type for '%s'.\n", access_node->name);
-                    exit(EXIT_FAILURE);
-                }
-            } else {
-                fprintf(stderr, "\nError: Variable '%s' is not a string nor a list.\n", access_node->name);
-            }
+        case NODE_VARIABLE_ACCESS:
+            result = evaluate_variable_access(&node->data.variable_access, scope, ret_ctx);
             break;
-        }
         case NODE_EXPR_POSTFIX: {
             const PostfixExprNode *postfix_node = &node->data.postfix_expr;
             Variable *variable = get_variable(scope, postfix_node->var_name);
@@ -757,7 +695,7 @@ void execute(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx)
             execute_return(&node->data.return_stmt, scope, ret_ctx);
             break;
         case NODE_ASSIGNMENT:
-            execute_assignment(&node->data.assignment, scope, ret_ctx);
+            execute_assignment(&node->data.assignment, scope);
             break;
         default:
             fprintf(stderr, "Unknown node type: %d\n", node->type);
@@ -1401,140 +1339,9 @@ void execute_return(const ReturnNode *node, struct hashmap *scope, ReturnContext
     }
 }
 
-void execute_assignment(const AssignmentNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
-    Variable *var = get_variable(scope, node->target_name);
-
-    if (!var) {
-        fprintf(stderr, "\nError: Variable '%s' not found for assignment.\n", node->target_name);
-        exit(EXIT_FAILURE);
-    }
-
-    if (node->index_expr != NULL) {
-        if (var->type == VAR_LIST) {
-            Variable *list_var = get_variable(scope, node->target_name);
-
-            if (!list_var) {
-                fprintf(stderr, "\nError: List variable '%s' not found for assignment.\n", node->target_name);
-                exit(EXIT_FAILURE);
-            }
-            if (list_var->type != VAR_LIST) {
-                fprintf(stderr, "\nError: Variable '%s' is not a list for assignment.\n", node->target_name);
-                exit(EXIT_FAILURE);
-            }
-
-            int list_size = 0;
-            const ListNode *counter_node = list_var->value.list_val.head;
-            while (counter_node != NULL) {
-                list_size++;
-                counter_node = counter_node->next;
-            }
-
-            ReturnContext index_eval_ctx = {0};
-            const double index_val_double = evaluate_expression(node->index_expr, scope, &index_eval_ctx).value.num_val;
-
-            if (index_val_double != floor(index_val_double)) {
-                fprintf(stderr, "\nError: List index for '%s' must be an integer, got %f.\n", node->target_name, index_val_double);
-                exit(EXIT_FAILURE);
-            }
-            int index = (int)index_val_double;
-            if (index < 0) {
-                index = list_size + index;
-            }
-            if (index < 0 || index >= list_size) {
-                fprintf(stderr, "\nError: List index %d (calculated from %f) out of bounds for list '%s' of size %d during assignment.\n",
-                        index, index_val_double, node->target_name, list_size);
-                exit(EXIT_FAILURE);
-            }
-
-            ListNode *target_lnode = list_var->value.list_val.head;
-            for (int i = 0; i < index; ++i) {
-                target_lnode = target_lnode->next;
-            }
-
-            ReturnContext value_eval_ctx = {0};
-            if (list_var->value.list_val.element_type == VAR_NUM) {
-                const double value_to_assign = evaluate_expression(node->value_expr, scope,
-                    &value_eval_ctx).value.num_val;
-                if (target_lnode->element.type != VAR_NUM) {
-                    fprintf(stderr, "Internal \nError: List '%s' node type mismatch at index %d.\n",
-                        node->target_name, index);
-                    exit(EXIT_FAILURE);
-                }
-                target_lnode->element.value.num_val = value_to_assign;
-            } else if (list_var->value.list_val.element_type == VAR_STR) {
-                ReturnValue value_val = evaluate_expression(node->value_expr, scope, &value_eval_ctx);
-                if (value_val.type != RET_STR) {
-                    fprintf(stderr, "\nError: Failed to evaluate string value for assignment to list '%s'"
-                                    " at index %d.\n", node->target_name, index);
-                    exit(EXIT_FAILURE);
-                }
-                char *value_to_assign_str = strdup(value_val.value.str_val);
-                free_return_value(value_val.type, &value_val);
-
-                if (!value_to_assign_str) {
-                    fprintf(stderr, "\nError: Failed to evaluate string value for assignment to list '%s'"
-                                    " at index %d.\n", node->target_name, index);
-                    exit(EXIT_FAILURE);
-                }
-                if (target_lnode->element.type != VAR_STR) {
-                    fprintf(stderr, "Internal \nError: List '%s' node type mismatch at index %d.\n",
-                        node->target_name, index);
-                    free(value_to_assign_str);
-                    exit(EXIT_FAILURE);
-                }
-                if (target_lnode->element.value.str_val != NULL) {
-                    free(target_lnode->element.value.str_val);
-                }
-                target_lnode->element.value.str_val = value_to_assign_str;
-            } else {
-                fprintf(stderr, "Internal \nError: Assignment to list '%s' with unknown element type.\n", node->target_name);
-                exit(EXIT_FAILURE);
-            }
-        } else if (var->type == VAR_STR) {
-            ReturnValue index_val = evaluate_expression(node->index_expr, scope, ret_ctx);
-            ReturnValue value_val = evaluate_expression(node->value_expr, scope, ret_ctx);
-
-            if (index_val.type != RET_NUM) {
-                fprintf(stderr, "\nError: String index must be a number.\n");
-                exit(EXIT_FAILURE);
-            }
-
-            if (value_val.type != RET_STR) {
-                fprintf(stderr, "\nError: Can only assign a string character with a string value.\n");
-                exit(EXIT_FAILURE);
-            }
-
-            int index = (int)index_val.value.num_val;
-            char *str = var->value.str_val;
-            int str_len = strlen(str);
-
-            // Handle negative indices
-            if (index < 0) {
-                index = str_len + index;
-            }
-
-            // Check bounds
-            if (index < 0 || index >= str_len) {
-                fprintf(stderr, "\nError: String index out of range.\n");
-                exit(EXIT_FAILURE);
-            }
-
-            // Check if the value is a single character
-            if (strlen(value_val.value.str_val) != 1) {
-                fprintf(stderr, "\nError: Can only assign a single character to a string index.\n");
-                exit(EXIT_FAILURE);
-            }
-
-            // Assign the character
-            str[index] = value_val.value.str_val[0];
-
-            // Clean up
-            free(value_val.value.str_val);
-        } else {
-            fprintf(stderr, "\nError: Assignment operation only supported for lists and strings.\n");
-            exit(EXIT_FAILURE);
-        }
-    } else {
+void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
+    // Handle direct variable assignment (no indexing)
+    if (node->index_expr == NULL && node->target_access == NULL) {
         Variable *existing_var = get_variable(scope, node->target_name);
 
         if (!existing_var) {
@@ -1555,25 +1362,297 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope, Retur
             }
             char *value_to_assign_str = strdup(value_val.value.str_val);
             free_return_value(value_val.type, &value_val);
-             if (!value_to_assign_str) {
-                  fprintf(stderr, "\nError: Failed to evaluate string value for assignment to variable '%s'.\n",
-                      node->target_name);
-                  exit(EXIT_FAILURE);
-             }
+            if (!value_to_assign_str) {
+                fprintf(stderr, "\nError: Failed to evaluate string value for assignment to variable '%s'.\n",
+                    node->target_name);
+                exit(EXIT_FAILURE);
+            }
             if (existing_var->value.str_val != NULL) {
                 free(existing_var->value.str_val);
             }
             existing_var->value.str_val = value_to_assign_str;
         } else if (existing_var->type == VAR_LIST) {
-             fprintf(stderr, "\nError: Cannot assign directly to a list variable '%s' using '='."
-                             " Use list declaration or modify elements.\n", node->target_name);
-             exit(EXIT_FAILURE);
+            fprintf(stderr, "\nError: Cannot assign directly to a list variable '%s' using '='."
+                " Use list declaration or modify elements.\n", node->target_name);
+            exit(EXIT_FAILURE);
         } else {
-             fprintf(stderr, "Internal \nError: Assignment to variable '%s' with unknown type.\n",
-                 node->target_name);
-             exit(EXIT_FAILURE);
+            fprintf(stderr, "Internal \nError: Assignment to variable '%s' with unknown type.\n",
+                node->target_name);
+            exit(EXIT_FAILURE);
+        }
+        return;
+    }
+
+    // Handle nested assignment (through the target_access field)
+    if (node->target_name == NULL && node->target_access != NULL) {
+        // Get the underlying expression to evaluate
+        ASTNode *access_expr = node->target_access;
+
+        // We need to follow the chain through parent_expr fields
+        // But we need to find the base variable first
+        ASTNode *current = access_expr;
+        while (current->data.variable_access.name == NULL &&
+               current->data.variable_access.parent_expr != NULL) {
+            current = current->data.variable_access.parent_expr;
+        }
+
+        // Now 'current' should point to the base variable access node
+        if (current->data.variable_access.name == NULL) {
+            fprintf(stderr, "\nInternal Error: Invalid nested access chain.\n");
+            exit(EXIT_FAILURE);
+        }
+
+        // Get the variable
+        Variable *var = get_variable(scope, current->data.variable_access.name);
+        if (!var) {
+            fprintf(stderr, "\nError: Variable '%s' not found for assignment.\n",
+                    current->data.variable_access.name);
+            exit(EXIT_FAILURE);
+        }
+
+        // Make sure it's a list
+        if (var->type != VAR_LIST) {
+            fprintf(stderr, "\nError: Cannot index into non-list variable '%s'.\n",
+                    current->data.variable_access.name);
+            exit(EXIT_FAILURE);
+        }
+
+        // Build a path of indices to follow
+        int max_depth = 16;  // Reasonable maximum nesting depth
+        int indices[max_depth];
+        int depth = 0;
+
+        // Walk back through the chain, collecting indices
+        ASTNode *idx_node = access_expr;
+        while (idx_node != NULL && depth < max_depth) {
+            // Evaluate the index at this level
+            ReturnContext idx_ctx = {0};
+            double idx_val = evaluate_expression(idx_node->data.variable_access.index_expr,
+                                                scope, &idx_ctx).value.num_val;
+
+            if (idx_val != floor(idx_val)) {
+                fprintf(stderr, "\nError: List index must be an integer, got %f.\n", idx_val);
+                exit(EXIT_FAILURE);
+            }
+
+            indices[depth++] = (int)idx_val;
+
+            // Move to the parent (actually going in reverse, from innermost to outermost)
+            if (idx_node->data.variable_access.parent_expr == NULL) {
+                idx_node = NULL;
+            } else {
+                idx_node = idx_node->data.variable_access.parent_expr;
+            }
+        }
+
+        // We collected indices from innermost to outermost, so reverse them
+        for (int i = 0; i < depth / 2; i++) {
+            int temp = indices[i];
+            indices[i] = indices[depth - 1 - i];
+            indices[depth - 1 - i] = temp;
+        }
+
+        // Now follow the path of indices to find the element to assign
+        ListNode *list_ptr = var->value.list_val.head;
+        VarType current_type = var->value.list_val.element_type;
+        VarType nested_type = var->value.list_val.nested_element_type;
+        bool is_nested = var->value.list_val.is_nested;
+
+        // For all but the last index, navigate through the nested lists
+        for (int i = 0; i < depth - 1; i++) {
+            int idx = indices[i];
+
+            // Count the list size at this level
+            int list_size = 0;
+            ListNode *counter = list_ptr;
+            while (counter != NULL) {
+                list_size++;
+                counter = counter->next;
+            }
+
+            // Handle negative indexing
+            if (idx < 0) idx += list_size;
+
+            // Check bounds
+            if (idx < 0 || idx >= list_size) {
+                fprintf(stderr, "\nError: List index %d out of bounds for list of size %d.\n",
+                        idx, list_size);
+                exit(EXIT_FAILURE);
+            }
+
+            // Navigate to the element
+            ListNode *target = list_ptr;
+            for (int j = 0; j < idx; j++) {
+                target = target->next;
+            }
+
+            // Make sure this element is a nested list
+            if (target->element.type != VAR_LIST) {
+                fprintf(stderr, "\nError: Cannot index into non-list element.\n");
+                exit(EXIT_FAILURE);
+            }
+
+            // Update for next iteration
+            list_ptr = target->element.value.nested_list.head;
+            current_type = target->element.value.nested_list.element_type;
+            nested_type = target->element.value.nested_list.nested_element_type;
+            is_nested = target->element.value.nested_list.is_nested;
+        }
+
+        // Process the final index (actual assignment)
+        int final_idx = indices[depth - 1];
+
+        // Count the list size at the final level
+        int list_size = 0;
+        ListNode *counter = list_ptr;
+        while (counter != NULL) {
+            list_size++;
+            counter = counter->next;
+        }
+
+        // Handle negative indexing
+        if (final_idx < 0) final_idx += list_size;
+
+        // Check bounds
+        if (final_idx < 0 || final_idx >= list_size) {
+            fprintf(stderr, "\nError: List index %d out of bounds for list of size %d.\n",
+                    final_idx, list_size);
+            exit(EXIT_FAILURE);
+        }
+
+        // Navigate to the target element
+        ListNode *target = list_ptr;
+        for (int j = 0; j < final_idx; j++) {
+            target = target->next;
+        }
+
+        // Evaluate the value to assign
+        ReturnContext value_ctx = {0};
+        ReturnValue value = evaluate_expression(node->value_expr, scope, &value_ctx);
+
+        // Assign based on the element type
+        if (target->element.type == VAR_NUM) {
+            if (value.type != RET_NUM) {
+                fprintf(stderr, "\nError: Cannot assign non-numeric value to numeric list element.\n");
+                exit(EXIT_FAILURE);
+            }
+            target->element.value.num_val = value.value.num_val;
+        } else if (target->element.type == VAR_STR) {
+            if (value.type != RET_STR) {
+                fprintf(stderr, "\nError: Cannot assign non-string value to string list element.\n");
+                exit(EXIT_FAILURE);
+            }
+            if (target->element.value.str_val != NULL) {
+                free(target->element.value.str_val);
+            }
+            target->element.value.str_val = strdup(value.value.str_val);
+        } else if (target->element.type == VAR_LIST) {
+            if (value.type != RET_LIST) {
+                fprintf(stderr, "\nError: Cannot assign non-list value to nested list element.\n");
+                exit(EXIT_FAILURE);
+            }
+            // Free the existing nested list
+            free_list(target->element.value.nested_list.head);
+            // Copy the new list
+            target->element.value.nested_list.head = deep_copy_list(value.value.list_val.head);
+            target->element.value.nested_list.element_type = value.value.list_val.element_type;
+            target->element.value.nested_list.nested_element_type = value.value.list_val.nested_element_type;
+            target->element.value.nested_list.is_nested = value.value.list_val.is_nested;
+        }
+
+        // Clean up
+        free_return_value(value.type, &value);
+        return;
+    }
+
+    // Handle single-index assignment (list[index] = value)
+    Variable *var = get_variable(scope, node->target_name);
+    if (!var) {
+        fprintf(stderr, "\nError: Variable '%s' not found for assignment.\n", node->target_name);
+        exit(EXIT_FAILURE);
+    }
+
+    // Make sure the variable is a list
+    if (var->type != VAR_LIST) {
+        fprintf(stderr, "\nError: Assignment to non-list variable '%s' with index.\n", node->target_name);
+        exit(EXIT_FAILURE);
+    }
+
+    // Evaluate the index expression
+    ReturnContext index_eval_ctx = {0};
+    double index_val_double = evaluate_expression(node->index_expr, scope, &index_eval_ctx).value.num_val;
+    if (index_val_double != floor(index_val_double)) {
+        fprintf(stderr, "\nError: List index for '%s' must be an integer, got %f.\n",
+                node->target_name, index_val_double);
+        exit(EXIT_FAILURE);
+    }
+
+    // Get the list size
+    int list_size = 0;
+    ListNode *counter_node = var->value.list_val.head;
+    while (counter_node != NULL) {
+        list_size++;
+        counter_node = counter_node->next;
+    }
+
+    // Convert the index to an integer
+    int index = (int)index_val_double;
+    // Handle negative indices (Python style)
+    if (index < 0) index += list_size;
+    // Check bounds
+    if (index < 0 || index >= list_size) {
+        fprintf(stderr, "\nError: List index %d out of bounds for list '%s' of size %d.\n",
+                index, node->target_name, list_size);
+        exit(EXIT_FAILURE);
+    }
+
+    // Traverse to the target node
+    ListNode *current = var->value.list_val.head;
+    for (int i = 0; i < index; ++i) {
+        current = current->next;
+    }
+
+    // Evaluate the value to assign
+    ReturnContext value_eval_ctx = {0};
+    ReturnValue value_val = evaluate_expression(node->value_expr, scope, &value_eval_ctx);
+
+    // Handle nested lists
+    if (current->element.type == VAR_LIST) {
+        // For nested list assignment, we need a different approach
+        // Check if we're assigning to a nested list element
+        if (value_val.type == RET_LIST) {
+            // Free the existing nested list
+            free_list(current->element.value.nested_list.head);
+            // Copy the new list to the element
+            current->element.value.nested_list.head = deep_copy_list(value_val.value.list_val.head);
+            current->element.value.nested_list.element_type = value_val.value.list_val.element_type;
+            current->element.value.nested_list.nested_element_type = value_val.value.list_val.nested_element_type;
+            current->element.value.nested_list.is_nested = value_val.value.list_val.is_nested;
+        } else {
+            fprintf(stderr, "\nError: Cannot assign non-list value to nested list element.\n");
+            exit(EXIT_FAILURE);
+        }
+    } else {
+        // Handle primitive element assignment
+        if (var->value.list_val.element_type == VAR_NUM) {
+            if (value_val.type != RET_NUM) {
+                fprintf(stderr, "\nError: Type mismatch in assignment to list '%s'.\n", node->target_name);
+                exit(EXIT_FAILURE);
+            }
+            current->element.value.num_val = value_val.value.num_val;
+        } else if (var->value.list_val.element_type == VAR_STR) {
+            if (value_val.type != RET_STR) {
+                fprintf(stderr, "\nError: Type mismatch in assignment to list '%s'.\n", node->target_name);
+                exit(EXIT_FAILURE);
+            }
+            free(current->element.value.str_val);
+            current->element.value.str_val = strdup(value_val.value.str_val);
+        } else {
+            fprintf(stderr, "Internal Error: Unknown list element type for '%s'.\n", node->target_name);
+            exit(EXIT_FAILURE);
         }
     }
+    free_return_value(value_val.type, &value_val);
 }
 
 ReturnValue evaluate_str_access(const VariableAccessNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
@@ -1621,6 +1700,152 @@ ReturnValue evaluate_str_access(const VariableAccessNode *node, struct hashmap *
     result.value.str_val = safe_malloc(2);
     result.value.str_val[0] = str[index];
     result.value.str_val[1] = '\0';
+
+    return result;
+}
+
+ReturnValue evaluate_variable_access(const VariableAccessNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
+    ReturnValue result = {0};
+
+    // Handle nested access (when name is NULL)
+    if (node->name == NULL && node->parent_expr != NULL) {
+        // Evaluate the parent expression first (which could be another nested access)
+        ReturnValue parent_val = evaluate_expression(node->parent_expr, scope, ret_ctx);
+
+        // Parent must be a list
+        if (parent_val.type != RET_LIST) {
+            fprintf(stderr, "\nError: Cannot index into non-list value.\n");
+            exit(EXIT_FAILURE);
+        }
+
+        // Evaluate the index expression
+        ReturnContext index_ctx = {0};
+        double index_val_double = evaluate_expression(node->index_expr, scope, &index_ctx).value.num_val;
+
+        // Index must be an integer
+        if (index_val_double != floor(index_val_double)) {
+            fprintf(stderr, "\nError: List index must be an integer, got %f.\n", index_val_double);
+            exit(EXIT_FAILURE);
+        }
+
+        int index = (int)index_val_double;
+
+        // Count the list size
+        int list_size = 0;
+        ListNode *counter_node = parent_val.value.list_val.head;
+        while (counter_node != NULL) {
+            list_size++;
+            counter_node = counter_node->next;
+        }
+
+        // Handle negative indices (Python-like)
+        if (index < 0) index += list_size;
+
+        // Check bounds
+        if (index < 0 || index >= list_size) {
+            fprintf(stderr, "\nError: List index %d out of bounds for list of size %d.\n",
+                    index, list_size);
+            exit(EXIT_FAILURE);
+        }
+
+        // Traverse to the target node
+        ListNode *current = parent_val.value.list_val.head;
+        for (int i = 0; i < index; ++i) {
+            current = current->next;
+        }
+
+        // Handle different element types
+        if (current->element.type == VAR_NUM) {
+            result.type = RET_NUM;
+            result.value.num_val = current->element.value.num_val;
+        } else if (current->element.type == VAR_STR) {
+            result.type = RET_STR;
+            result.value.str_val = strdup(current->element.value.str_val);
+        } else if (current->element.type == VAR_LIST) {
+            // This is a nested list
+            result.type = RET_LIST;
+            result.value.list_val.element_type = current->element.value.nested_list.element_type;
+            result.value.list_val.nested_element_type = current->element.value.nested_list.nested_element_type;
+            result.value.list_val.is_nested = current->element.value.nested_list.is_nested;
+            result.value.list_val.head = deep_copy_list(current->element.value.nested_list.head);
+        }
+
+        // Clean up the parent value
+        free_return_value(parent_val.type, &parent_val);
+
+        return result;
+    }
+
+    // Handle direct variable access (first level)
+    Variable *var = get_variable(scope, node->name);
+    if (!var) {
+        fprintf(stderr, "\nError: Variable '%s' not found.\n", node->name);
+        exit(EXIT_FAILURE);
+    }
+
+    // Handle string access
+    if (var->type == VAR_STR) {
+        return evaluate_str_access(node, scope, ret_ctx);
+    }
+
+    // Make sure it's a list
+    if (var->type != VAR_LIST) {
+        fprintf(stderr, "\nError: Cannot index into non-list variable '%s'.\n", node->name);
+        exit(EXIT_FAILURE);
+    }
+
+    // Evaluate the index expression
+    ReturnContext index_ctx = {0};
+    double index_val_double = evaluate_expression(node->index_expr, scope, &index_ctx).value.num_val;
+
+    // Index must be an integer
+    if (index_val_double != floor(index_val_double)) {
+        fprintf(stderr, "\nError: List index for '%s' must be an integer, got %f.\n",
+                node->name, index_val_double);
+        exit(EXIT_FAILURE);
+    }
+
+    int index = (int)index_val_double;
+
+    // Count the list size
+    int list_size = 0;
+    ListNode *counter_node = var->value.list_val.head;
+    while (counter_node != NULL) {
+        list_size++;
+        counter_node = counter_node->next;
+    }
+
+    // Handle negative indices (Python-like)
+    if (index < 0) index += list_size;
+
+    // Check bounds
+    if (index < 0 || index >= list_size) {
+        fprintf(stderr, "\nError: List index %d out of bounds for list '%s' of size %d.\n",
+                index, node->name, list_size);
+        exit(EXIT_FAILURE);
+    }
+
+    // Find the indexed element
+    ListNode *current = var->value.list_val.head;
+    for (int i = 0; i < index; ++i) {
+        current = current->next;
+    }
+
+    // Return the appropriate value based on element type
+    if (current->element.type == VAR_NUM) {
+        result.type = RET_NUM;
+        result.value.num_val = current->element.value.num_val;
+    } else if (current->element.type == VAR_STR) {
+        result.type = RET_STR;
+        result.value.str_val = strdup(current->element.value.str_val);
+    } else if (current->element.type == VAR_LIST) {
+        // This is a nested list
+        result.type = RET_LIST;
+        result.value.list_val.element_type = current->element.value.nested_list.element_type;
+        result.value.list_val.nested_element_type = current->element.value.nested_list.nested_element_type;
+        result.value.list_val.is_nested = current->element.value.nested_list.is_nested;
+        result.value.list_val.head = deep_copy_list(current->element.value.nested_list.head);
+    }
 
     return result;
 }

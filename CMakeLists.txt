@@ -22,6 +22,7 @@ add_executable(KoalaLang src/main.c
         src/functions.c
         src/functions.h
         src/__c_functions.c
-        src/__c_functions.h)
+        src/__c_functions.h
+)
 
 add_compile_options(-std=c2x)
