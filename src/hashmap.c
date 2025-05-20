@@ -777,6 +777,48 @@ uint64_t hashmap_xxhash3(const void *data, size_t len, uint64_t seed0,
     return xxh3(data, len ,seed0);
 }
 
+
+struct hashmap *hashmap_deep_copy(struct hashmap *src, item_copy_func copy_func, void *udata) {
+    if (!src || !copy_func) return NULL;
+
+    // Allocate new hashmap with same parameters
+    struct hashmap *dst = hashmap_new(
+        src->elsize, // element size
+        hashmap_count(src), // capacity (can be optimized)
+        src->seed0,
+        src->seed1,
+        src->hash,
+        src->compare,
+        src->elfree,
+        src->udata
+    );
+    if (!dst) return NULL;
+
+    size_t i = 0;
+    void *item;
+
+    // Iterate over all elements in the source map
+    while (hashmap_iter(src, &i, &item)) {
+        // Allocate a new item
+        void *item_copy = malloc(src->elsize);
+        if (!item_copy) {
+            hashmap_free(dst);
+            return NULL;
+        }
+
+        // Deep copy item contents
+        copy_func(item_copy, item, udata);
+
+        // Insert the copied item into the new hashmap
+        hashmap_set(dst, item_copy);
+
+        // Clean up temporary item (hashmap makes its own copy internally)
+        free(item_copy);
+    }
+
+    return dst;
+}
+
 //==============================================================================
 // TESTS AND BENCHMARKS
 // $ cc -DHASHMAP_TEST hashmap.c && ./a.out              # run tests

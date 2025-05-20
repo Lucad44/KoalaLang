@@ -77,4 +77,6 @@ char *get_string_value(ReturnValue value);
 
 ReturnValue evaluate_variable_access(const VariableAccessNode *node, struct hashmap *scope, ReturnContext *ret_ctx);
 
+void execute_import(const ImportNode *node);
+
 #endif //INTERPRETER_H

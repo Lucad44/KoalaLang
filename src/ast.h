@@ -2,6 +2,7 @@
 #define AST_H
 
 #include "variables.h"
+#include "modules.h"
 
 typedef enum {
     NODE_VAR_DECL,
@@ -23,7 +24,8 @@ typedef enum {
     NODE_EXPR_BINARY,
     NODE_EXPR_POSTFIX,
     NODE_VARIABLE_ACCESS,
-    NODE_ASSIGNMENT
+    NODE_ASSIGNMENT,
+    NODE_IMPORT
 } NodeType;
 
 typedef enum {
@@ -169,6 +171,10 @@ typedef struct {
     ASTNode *value_expr;     // The value to assign
 } AssignmentNode;
 
+typedef struct {
+    Module *module;
+} ImportNode;
+
 struct ASTNode {
     NodeType type;
     union {
@@ -190,6 +196,7 @@ struct ASTNode {
         ReturnNode return_stmt;
         VariableAccessNode variable_access;
         AssignmentNode assignment;
+        ImportNode import;
     } data;
 };
 

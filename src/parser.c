@@ -1,13 +1,16 @@
 #include "parser.h"
+#include "ast.h"
+#include "hashmap.h"
+#include "lexer.h"
 #include "memory.h"
 #include "variables.h"
-#include "interpreter.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "functions.h"
-#include "__c_functions.h"
+#include "modules.h"
 
 void init_parser(Parser *parser, Lexer *lexer) {
     parser->lexer = lexer;
@@ -461,6 +464,9 @@ ASTNode *parse_braced_block(Parser *parser) {
             case TOKEN_KEYWORD_RETURN:
                 stmt = parse_return(parser);
                 break;
+            case TOKEN_KEYWORD_IMPORT:
+                stmt = parse_import(parser);
+                break;
             case TOKEN_IDENTIFIER:
                 stmt = parse_expression_statement(parser);
                 break;
@@ -495,10 +501,12 @@ ASTNode *parse_function_declaration(Parser *parser) {
     }
     char *func_name = strdup(parser->current_token.lexeme);
 
-    if (hashmap_get(__c_functions_meta_map, &(__C_FunctionMeta) { .name = func_name }) != NULL) {
-        fprintf(stderr, "Function '%s' already defined in the standard library."
-                        "\nCan't overwrite standard library functions.\n"
-                        "It is possible to see a full list of standard library functions in the documentation.", func_name);
+    
+
+    if (get_function_meta(imported_modules, func_name)) {
+        fprintf(stderr, "Function '%s' already defined in an imported module."
+                        "\nCan't overwrite functions.\n"
+                        "It is possible to see a full list of functions for each module in the documentation.", func_name);
         exit(EXIT_FAILURE);
     }
 
@@ -710,6 +718,9 @@ ASTNode *parse_program(Parser *parser) {
                 break;
             case TOKEN_KEYWORD_RETURN:
                 stmt = parse_return(parser);
+                break;
+            case TOKEN_KEYWORD_IMPORT:
+                stmt = parse_import(parser);
                 break;
             case TOKEN_IDENTIFIER:
                 stmt = parse_expression_statement(parser);
@@ -1109,3 +1120,73 @@ ASTNode *parse_assignment(Parser *parser) {
 
     return node;
 }
+
+ASTNode *parse_import(Parser *parser) {
+    advance(parser);  // consume 'import'
+
+    if (parser->current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "\nError: Expected module name after 'import'.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    char *module_name = strdup(parser->current_token.lexeme);
+    advance(parser);  // consume module name
+
+    if (parser->current_token.type != TOKEN_SEMICOLON) {
+        fprintf(stderr, "\nError: Expected ';' after module name.\n");
+        free(module_name);
+        exit(EXIT_FAILURE);
+    }
+
+    advance(parser);  // consume ';'
+
+    // Get the module from the module map
+    const Module *module = hashmap_get(module_map, &(Module) { .name = module_name });
+    if (!module) {
+        fprintf(stderr, "\nError: Module '%s' not found.\n", module_name);
+        free(module_name);
+        exit(EXIT_FAILURE);
+    }
+
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) {
+        fprintf(stderr, "\nError: Memory allocation failed for import node.\n");
+        free(module_name);
+        exit(EXIT_FAILURE);
+    }
+    node->type = NODE_IMPORT;
+
+    // Allocate memory for the Module struct in the ImportNode
+    node->data.import.module = malloc(sizeof(Module));
+    if (!node->data.import.module) {
+        fprintf(stderr, "\nError: Memory allocation failed for module.\n");
+        free(module_name);
+        free(node);
+        exit(EXIT_FAILURE);
+    }
+
+    // Copy module name
+    node->data.import.module->name = strdup(module->name);
+    if (!node->data.import.module->name) {
+        fprintf(stderr, "\nError: Memory allocation failed for module name.\n");
+        free(module_name);
+        free(node->data.import.module);
+        free(node);
+        exit(EXIT_FAILURE);
+    }
+
+    // Deep copy the function meta map
+    node->data.import.module->function_meta_map = hashmap_deep_copy(module->function_meta_map, deep_copy_function_meta, NULL);
+    if (!node->data.import.module->function_meta_map) {
+        fprintf(stderr, "\nError: Failed to copy function meta map for module '%s'.\n", module_name);
+        free(module_name);
+        free(node->data.import.module->name);
+        free(node->data.import.module);
+        free(node);
+        exit(EXIT_FAILURE);
+    }
+
+    free(module_name);
+    return node;
+}
+    

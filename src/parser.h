@@ -3,6 +3,7 @@
 
 #include "lexer.h"
 #include "ast.h"
+#include "interpreter.h"
 
 typedef struct {
     Lexer *lexer;
@@ -44,5 +45,7 @@ ASTNode *parse_expression_statement(Parser *parser);
 ASTNode *parse_list_type(Parser *parser);
 
 ASTNode *parse_assignment(Parser *parser);
+
+ASTNode *parse_import(Parser *parser);
 
 #endif

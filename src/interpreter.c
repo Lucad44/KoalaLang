@@ -6,10 +6,11 @@
 
 #include <setjmp.h>
 
+#include "ast.h"
 #include "variables.h"
 #include "functions.h"
 #include "memory.h"
-#include "__c_functions.h"
+#include "modules.h"
 
 ReturnContextNode* current_return_ctx = NULL;
 
@@ -108,7 +109,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             result.type = RET_STR;
             result.value.str_val = strdup(node->data.str_literal.str_val);
             break;
-         case NODE_LIST_LITERAL: {
+        case NODE_LIST_LITERAL: {
             const ListLiteralNode *literal = &node->data.list_literal;
             result.type = RET_LIST;
             result.value.list_val.element_type = literal->element_type;
@@ -420,6 +421,11 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             result.value.num_val = original_value;
             break;
         }
+        case NODE_IMPORT: {
+            const Module *module = node->data.import.module;
+            hashmap_set(imported_modules, &module);
+            break;
+        }
         default:
             fprintf(stderr, "\nError: Unknown node type: %d.\n", node->type);
             exit(EXIT_FAILURE);
@@ -697,6 +703,9 @@ void execute(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx)
         case NODE_ASSIGNMENT:
             execute_assignment(&node->data.assignment, scope);
             break;
+        case NODE_IMPORT:
+            execute_import(&node->data.import);
+            break;
         default:
             fprintf(stderr, "Unknown node type: %d\n", node->type);
             break;
@@ -948,7 +957,7 @@ ReturnValue execute_function_body(const ASTNode *body, struct hashmap *scope, Re
 }
 
 void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, ReturnContext *caller_ret_ctx) {
-    const __C_FunctionMeta *c_func = hashmap_get(__c_functions_meta_map, &(__C_FunctionMeta){.name = func_call->name});
+    const FunctionMeta *c_func = get_function_meta(imported_modules, func_call->name);
     if (c_func) {
         if (func_call->arg_count != c_func->param_count) {
             fprintf(stderr, "\nError: Function %s expects %d arguments, got %d\n",
@@ -972,7 +981,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
                 return;
             }
 
-            __C_DataType param_type = c_func->param_types[i];
+            DataType param_type = c_func->param_types[i];
             switch (param_type) {
                 case TYPE_DOUBLE:
                     if (arg_val.type != RET_NUM) {
@@ -1079,7 +1088,8 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
 
     const Function *function = hashmap_get(function_map, &(Function) { .name = func_call->name });
     if (!function) {
-        fprintf(stderr, "Undefined function: %s\n", func_call->name);
+        fprintf(stderr, "Undefined function: %s.\n"
+            "Have you forgot to import a module?\n", func_call->name);
         exit(EXIT_FAILURE);
     }
     if (func_call->arg_count != function->param_count) {
@@ -1848,4 +1858,13 @@ ReturnValue evaluate_variable_access(const VariableAccessNode *node, struct hash
     }
 
     return result;
+}
+
+void execute_import(const ImportNode *node) {
+    Module *module = node->module;
+    if (!module) {
+        fprintf(stderr, "\nError: Module import failed. Module '%s' not found.\n", module->name);
+        exit(EXIT_FAILURE);
+    }
+    hashmap_set(imported_modules, module);
 }
