@@ -1804,7 +1804,6 @@ ReturnValue evaluate_variable_access(const VariableAccessNode *node, struct hash
         exit(EXIT_FAILURE);
     }
 
-    // Evaluate the index expression
     ReturnContext index_ctx = {0};
     double index_val_double = evaluate_expression(node->index_expr, scope, &index_ctx).value.num_val;
 
@@ -1817,7 +1816,6 @@ ReturnValue evaluate_variable_access(const VariableAccessNode *node, struct hash
 
     int index = (int)index_val_double;
 
-    // Count the list size
     int list_size = 0;
     ListNode *counter_node = var->value.list_val.head;
     while (counter_node != NULL) {
@@ -1825,7 +1823,6 @@ ReturnValue evaluate_variable_access(const VariableAccessNode *node, struct hash
         counter_node = counter_node->next;
     }
 
-    // Handle negative indices (Python-like)
     if (index < 0) index += list_size;
 
     // Check bounds
