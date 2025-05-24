@@ -49,6 +49,7 @@ typedef enum {
     TOKEN_LBRACE,
     TOKEN_RBRACE,
     TOKEN_COMMA,
+    TOKEN_DOT,
     TOKEN_EOF,
     TOKEN_ERROR,
     TOKEN_ELIF

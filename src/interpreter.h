@@ -41,8 +41,6 @@ typedef struct ReturnContextNode {
 
 int is_truthy(ReturnValue val);
 
-Variable *get_variable(struct hashmap *scope, char *name);
-
 void free_return_value(ReturnType type, ReturnValue *value);
 
 ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, ReturnContext *ret_ctx);

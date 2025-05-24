@@ -35,6 +35,45 @@ uint64_t variable_hash(const void *item, const uint64_t seed0, const uint64_t se
     return hashmap_sip(variable->name, strlen(variable->name), seed0, seed1);
 }
 
+Variable *get_variable(struct hashmap *scope, char *name) {
+    Variable *variable = (Variable *) hashmap_get(scope, &(Variable) {
+        .name = name
+    });
+
+    if (!variable) {
+        variable = (Variable *) hashmap_get(variable_map, &(Variable) {
+            .name = name
+        });
+    }
+    return variable == NULL ? NULL : variable;
+}
+
+void deep_copy_variable(void *dest, const void *src, void *udata) {
+    const Variable *src_var = (const Variable *)src;
+    Variable *dest_var = (Variable *)dest;
+
+    // Copy name
+    dest_var->name = src_var->name ? strdup(src_var->name) : NULL;
+
+    dest_var->type = src_var->type;
+
+    switch (src_var->type) {
+        case VAR_NUM:
+            dest_var->value.num_val = src_var->value.num_val;
+            break;
+        case VAR_STR:
+            dest_var->value.str_val = src_var->value.str_val ? strdup(src_var->value.str_val) : NULL;
+            break;
+        case VAR_LIST:
+            dest_var->value.list_val.element_type = src_var->value.list_val.element_type;
+            dest_var->value.list_val.nested_element_type = src_var->value.list_val.nested_element_type;
+            dest_var->value.list_val.is_nested = src_var->value.list_val.is_nested;
+            dest_var->value.list_val.head = deep_copy_list(src_var->value.list_val.head);
+            break;
+    }
+}
+
+
 char *trim_double(const double value) {
     char buffer[256];
     snprintf(buffer, sizeof(buffer), "%.15f", value);

@@ -72,19 +72,6 @@ static void free_function_scope_lists(struct hashmap *scope) {
     free(heads_to_free);
 }
 
-Variable *get_variable(struct hashmap *scope, char *name) {
-    Variable *variable = (Variable *) hashmap_get(scope, &(Variable) {
-        .name = name
-    });
-
-    if (!variable) {
-        variable = (Variable *) hashmap_get(variable_map, &(Variable) {
-            .name = name
-        });
-    }
-    return variable == NULL ? NULL : variable;
-}
-
 static void execute_block(const BlockNode *block, struct hashmap *scope, ReturnContext *ret_ctx) {
     for (int i = 0; i < block->stmt_count; i++) {
         execute(block->statements[i], scope, ret_ctx);
@@ -216,30 +203,60 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             break;
         }
         case NODE_EXPR_VARIABLE: {
-            const Variable *variable = get_variable(scope, node->data.variable.name);
-            if (!variable) {
-                fprintf(stderr, "Undefined variable: %s\n", node->data.variable.name);
-                exit(EXIT_FAILURE);
-            }
-            switch (variable->type) {
+            const Variable *c_var = get_variable_from_module(imported_modules, node->data.variable.name, node->data.variable.module_name);
+            if (c_var) {
+                switch (c_var->type) {
                 case VAR_NUM:
                     result.type = RET_NUM;
-                    result.value.num_val = variable->value.num_val;
+                    result.value.num_val = c_var->value.num_val;
                     break;
                 case VAR_STR:
                     result.type = RET_STR;
-                    result.value.str_val = strdup(variable->value.str_val);
+                    result.value.str_val = strdup(c_var->value.str_val);
                     break;
                 case VAR_LIST:
                     result.type = RET_LIST;
-                    result.value.list_val.element_type = variable->value.list_val.element_type;
-                    result.value.list_val.nested_element_type = variable->value.list_val.nested_element_type;
-                    result.value.list_val.is_nested = variable->value.list_val.is_nested;
-                    result.value.list_val.head = deep_copy_list(variable->value.list_val.head);
+                    result.value.list_val.element_type = c_var->value.list_val.element_type;
+                    result.value.list_val.nested_element_type = c_var->value.list_val.nested_element_type;
+                    result.value.list_val.is_nested = c_var->value.list_val.is_nested;
+                    result.value.list_val.head = deep_copy_list(c_var->value.list_val.head);
                     break;
                 default:
-                    fprintf(stderr, "Unknown variable type: %d\n", variable->type);
+                    fprintf(stderr, "Unknown variable type: %d\n", c_var->type);
                     exit(EXIT_FAILURE);
+                }
+            } else {
+                const Variable *variable = NULL;
+                if (scope) {
+                    variable = get_variable(scope, node->data.variable.name);
+                }
+                if (!variable) {
+                    variable = get_variable(variable_map, node->data.variable.name);
+                }
+                if (!variable) {
+                    fprintf(stderr, "Undefined variable: %s\n", node->data.variable.name);
+                    exit(EXIT_FAILURE);
+                }
+                switch (variable->type) {
+                    case VAR_NUM:
+                        result.type = RET_NUM;
+                        result.value.num_val = variable->value.num_val;
+                        break;
+                    case VAR_STR:
+                        result.type = RET_STR;
+                        result.value.str_val = strdup(variable->value.str_val);
+                        break;
+                    case VAR_LIST:
+                        result.type = RET_LIST;
+                        result.value.list_val.element_type = variable->value.list_val.element_type;
+                        result.value.list_val.nested_element_type = variable->value.list_val.nested_element_type;
+                        result.value.list_val.is_nested = variable->value.list_val.is_nested;
+                        result.value.list_val.head = deep_copy_list(variable->value.list_val.head);
+                        break;
+                    default:
+                        fprintf(stderr, "Unknown variable type: %d\n", variable->type);
+                        exit(EXIT_FAILURE);
+                }
             }
             break;
         }
@@ -394,7 +411,7 @@ ReturnValue evaluate_expression(const ASTNode *node, struct hashmap *scope, Retu
             break;
         case NODE_EXPR_POSTFIX: {
             const PostfixExprNode *postfix_node = &node->data.postfix_expr;
-            Variable *variable = get_variable(scope, postfix_node->var_name);
+            Variable *variable = get_variable(scope ? scope : variable_map, postfix_node->var_name);
 
             if (!variable) {
                 fprintf(stderr, "\nError: Undefined variable '%s' in postfix operation.\n", postfix_node->var_name);
@@ -720,7 +737,7 @@ int evaluate_condition(ASTNode *condition, struct hashmap *scope) {
             return condition->data.num_literal.num_val != 0;
 
         case NODE_EXPR_VARIABLE: {
-            const Variable *variable = get_variable(scope, condition->data.variable.name);
+            const Variable *variable = get_variable(scope ? scope : variable_map, condition->data.variable.name);
             if (variable && variable->type == VAR_NUM) {
                 return variable->value.num_val != 0;
             }
@@ -733,14 +750,14 @@ int evaluate_condition(ASTNode *condition, struct hashmap *scope) {
             if (condition->data.binary_expr.left->type == NODE_NUM_LITERAL) {
                 left = condition->data.binary_expr.left->data.num_literal.num_val;
             } else if (condition->data.binary_expr.left->type == NODE_EXPR_VARIABLE) {
-                const Variable *variable = get_variable(scope, condition->data.binary_expr.left->data.variable.name);
+                const Variable *variable = get_variable(scope ? scope : variable_map, condition->data.binary_expr.left->data.variable.name);
                 if (variable && variable->type == VAR_NUM) left = variable->value.num_val;
             }
 
             if (condition->data.binary_expr.right->type == NODE_NUM_LITERAL) {
                 right = condition->data.binary_expr.right->data.num_literal.num_val;
             } else if (condition->data.binary_expr.right->type == NODE_EXPR_VARIABLE) {
-                const Variable *variable = get_variable(scope, condition->data.binary_expr.right->data.variable.name);
+                const Variable *variable = get_variable(scope ? scope : variable_map, condition->data.binary_expr.right->data.variable.name);
                 if (variable && variable->type == VAR_NUM) right = variable->value.num_val;
             }
 
@@ -776,7 +793,7 @@ int evaluate_condition(ASTNode *condition, struct hashmap *scope) {
 }
 
 void execute_postfix(const PostfixExprNode *node, struct hashmap *scope) {
-    Variable *variable = get_variable(scope, node->var_name);
+    Variable *variable = get_variable(scope ? scope : variable_map, node->var_name);
 
     if (!variable) {
         fprintf(stderr, "Undefined variable: %s\n", node->var_name);
@@ -957,7 +974,7 @@ ReturnValue execute_function_body(const ASTNode *body, struct hashmap *scope, Re
 }
 
 void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, ReturnContext *caller_ret_ctx) {
-    const FunctionMeta *c_func = get_function_meta(imported_modules, func_call->name);
+    const FunctionMeta *c_func = get_function_meta_from_module(imported_modules, func_call->name, func_call->module_name);
     if (c_func) {
         if (func_call->arg_count != c_func->param_count) {
             fprintf(stderr, "\nError: Function %s expects %d arguments, got %d\n",
@@ -1177,7 +1194,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
 
             } else if (arg_node->type == NODE_EXPR_VARIABLE) {
                  char *list_arg_name = arg_node->data.variable.name;
-                 Variable *list_var_caller = get_variable(scope, list_arg_name);
+                 Variable *list_var_caller = get_variable(scope ? scope : variable_map, list_arg_name);
 
                  if (!list_var_caller) {
                      fprintf(stderr, "\nError: List variable '%s' (argument %d for function '%s') not found in caller scope.\n",
@@ -1352,7 +1369,7 @@ void execute_return(const ReturnNode *node, struct hashmap *scope, ReturnContext
 void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
     // Handle direct variable assignment (no indexing)
     if (node->index_expr == NULL && node->target_access == NULL) {
-        Variable *existing_var = get_variable(scope, node->target_name);
+        Variable *existing_var = get_variable(scope ? scope : variable_map, node->target_name);
 
         if (!existing_var) {
             fprintf(stderr, "\nError: Variable '%s' not declared before assignment.\n", node->target_name);
@@ -1413,7 +1430,7 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
         }
 
         // Get the variable
-        Variable *var = get_variable(scope, current->data.variable_access.name);
+        Variable *var = get_variable(scope ? scope : variable_map, current->data.variable_access.name);
         if (!var) {
             fprintf(stderr, "\nError: Variable '%s' not found for assignment.\n",
                     current->data.variable_access.name);
@@ -1576,7 +1593,7 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
     }
 
     // Handle single-index assignment (list[index] = value)
-    Variable *var = get_variable(scope, node->target_name);
+    Variable *var = get_variable(scope ? scope : variable_map, node->target_name);
     if (!var) {
         fprintf(stderr, "\nError: Variable '%s' not found for assignment.\n", node->target_name);
         exit(EXIT_FAILURE);
@@ -1666,7 +1683,7 @@ void execute_assignment(const AssignmentNode *node, struct hashmap *scope) {
 }
 
 ReturnValue evaluate_str_access(const VariableAccessNode *node, struct hashmap *scope, ReturnContext *ret_ctx) {
-    Variable *str_var = get_variable(scope, node->name);
+    Variable *str_var = get_variable(scope ? scope : variable_map, node->name);
 
     if (!str_var) {
         fprintf(stderr, "\nError: Undefined variable '%s'.\n", node->name);
@@ -1787,7 +1804,7 @@ ReturnValue evaluate_variable_access(const VariableAccessNode *node, struct hash
     }
 
     // Handle direct variable access (first level)
-    Variable *var = get_variable(scope, node->name);
+    Variable *var = get_variable(scope ? scope : variable_map, node->name);
     if (!var) {
         fprintf(stderr, "\nError: Variable '%s' not found.\n", node->name);
         exit(EXIT_FAILURE);

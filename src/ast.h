@@ -98,6 +98,7 @@ typedef struct {
 
 typedef struct {
     char *name;
+    char *module_name;
 } VariableNode;
 
 typedef struct {
@@ -135,6 +136,7 @@ typedef struct {
     char *name;
     ASTNode **arguments;
     int arg_count;
+    char *module_name;
 } FuncCallNode;
 
 typedef struct {

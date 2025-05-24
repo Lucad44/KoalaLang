@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "hashmap.h"
+#include "variables.h"
 
 typedef enum {
     TYPE_INT,
@@ -26,7 +27,8 @@ typedef struct {
 
 typedef struct {
     char *name;
-    struct hashmap *function_meta_map;
+    struct hashmap *module_function_meta_map;
+    struct hashmap *module_variables_map;
 } Module;
 
 extern struct hashmap *module_map;
@@ -43,7 +45,13 @@ uint64_t function_meta_hash(const void *item, uint64_t seed0, uint64_t seed1);
 
 bool module_iter(const void *item, void *udata);
 
-const FunctionMeta *get_function_meta(struct hashmap *map, const char *func_name);
+const FunctionMeta *get_function_meta_from_module(struct hashmap *map, const char* func_name, char *module_name);
+
+const FunctionMeta *get_function_meta_from_modules(struct hashmap *map, const char *func_name);
+
+const Variable *get_variable_from_module(struct hashmap *map, char* var_name, char *module_name);
+
+const Variable *get_variable_from_modules(struct hashmap *map, char *var_name);
 
 void deep_copy_function_meta(void *dest, const void *src, void *udata);
 

@@ -58,49 +58,106 @@ ASTNode *parse_primary(Parser *parser) {
             advance(parser);
             break;
         case TOKEN_KEYWORD_CALL: {
+            // consume 'call'
             advance(parser);
+
             if (parser->current_token.type != TOKEN_IDENTIFIER) {
-                fprintf(stderr, "Expected function name after 'call'\n");
+                fprintf(stderr, "Expected function name or module name after 'call'\n");
                 exit(EXIT_FAILURE);
             }
-            char *func_name = strdup(parser->current_token.lexeme);
+
+            // grab first identifier (func or module)
+            char *first = strdup(parser->current_token.lexeme);
             advance(parser);
 
+            char *module_name = NULL;
+            char *func_name = NULL;
+
+            // detect module.func
+            if (parser->current_token.type == TOKEN_DOT) {
+                module_name = first;
+                advance(parser); // consume '.'
+
+                if (parser->current_token.type != TOKEN_IDENTIFIER) {
+                    fprintf(stderr, "Expected function name after '%s.'\n", module_name);
+                    free(module_name);
+                    exit(EXIT_FAILURE);
+                }
+                func_name = strdup(parser->current_token.lexeme);
+                advance(parser);
+            } else {
+                // no module prefix
+                func_name = first;
+            }
+
+            // expect '('
             if (parser->current_token.type != TOKEN_LPAREN) {
-                fprintf(stderr, "Expected '(' after function name\n");
+                fprintf(stderr, "Expected '(' after function name '%s'\n", func_name);
+                free(module_name);
+                free(func_name);
                 exit(EXIT_FAILURE);
             }
             advance(parser);
 
+            // parse argument list
             ASTNode **arguments = NULL;
             int arg_count = 0;
-
             while (parser->current_token.type != TOKEN_RPAREN) {
                 ASTNode *arg = parse_expression(parser);
                 arguments = safe_realloc(arguments, (arg_count + 1) * sizeof(ASTNode *));
                 arguments[arg_count++] = arg;
-                if (parser->current_token.type == TOKEN_RPAREN) break;
-                if (parser->current_token.type != TOKEN_COMMA) {
-                    fprintf(stderr, "Expected ',' or ')' after argument\n");
+
+                if (parser->current_token.type == TOKEN_COMMA) {
+                    advance(parser);
+                } else if (parser->current_token.type != TOKEN_RPAREN) {
+                    fprintf(stderr, "Expected ',' or ')' after argument in function call '%s'\n", func_name);
                     exit(EXIT_FAILURE);
                 }
-                advance(parser);
             }
-            advance(parser);
+            advance(parser); // consume ')'
 
+            // build the call node
             node->type = NODE_FUNC_CALL;
             node->data.func_call.name = func_name;
             node->data.func_call.arguments = arguments;
             node->data.func_call.arg_count = arg_count;
+            node->data.func_call.module_name = module_name;  // NULL if unqualified
+
             break;
         }
-        case TOKEN_IDENTIFIER:
-            node->type = NODE_EXPR_VARIABLE;
-            node->data.variable.name = strdup(parser->current_token.lexeme);
-            char* var_name = node->data.variable.name;
+
+        case TOKEN_IDENTIFIER: {
+            // Grab the first identifier (may be a var name or module name)
+            char *first = strdup(parser->current_token.lexeme);
             advance(parser);
 
-            // Handle array/list access with brackets
+            char *var_name = NULL;
+            char *module_name = NULL;
+
+            // Check if it's module.var
+            if (parser->current_token.type == TOKEN_DOT) {
+                module_name = first;
+                advance(parser);
+
+                if (parser->current_token.type != TOKEN_IDENTIFIER) {
+                    fprintf(stderr, "Expected variable name after '%s.'\n", module_name);
+                    free(module_name);
+                    exit(EXIT_FAILURE);
+                }
+
+                var_name = strdup(parser->current_token.lexeme);
+                advance(parser);
+            } else {
+                // Plain variable
+                var_name = first;
+            }
+
+            // By default, assume this is a simple variable expression
+            node->type = NODE_EXPR_VARIABLE;
+            node->data.variable.name = var_name;
+            node->data.variable.module_name = module_name;
+
+            // Handle list/array access with brackets
             if (parser->current_token.type == TOKEN_LBRACKET) {
                 // First index - transform to variable access node
                 advance(parser);
@@ -115,14 +172,34 @@ ASTNode *parse_primary(Parser *parser) {
                 node->type = NODE_VARIABLE_ACCESS;
                 node->data.variable_access.name = var_name;
                 node->data.variable_access.index_expr = index_expr;
+                node->data.variable_access.parent_expr = NULL;
 
-                // Handle nested indices (for multidimensional arrays/nested lists)
+                // Attach module name for top-level access
+                if (module_name != NULL) {
+                    // Wrap this variable access in a new node for module scoping
+                    ASTNode *wrapped = safe_malloc(sizeof(ASTNode));
+                    *wrapped = *node;
+
+                    node->type = NODE_EXPR_VARIABLE;
+                    node->data.variable.name = var_name;
+                    node->data.variable.module_name = module_name;
+
+                    // Promote to access using parent_expr
+                    ASTNode *access = safe_malloc(sizeof(ASTNode));
+                    access->type = NODE_VARIABLE_ACCESS;
+                    access->data.variable_access.name = NULL;
+                    access->data.variable_access.index_expr = index_expr;
+                    access->data.variable_access.parent_expr = node;
+
+                    *node = *access;
+                    free(access);
+                }
+
+                // Handle nested access (multi-dimensional)
                 while (parser->current_token.type == TOKEN_LBRACKET) {
-                    // Create a new variable access node that will access the result of the previous access
                     ASTNode *outer_access = safe_malloc(sizeof(ASTNode));
-                    *outer_access = *node; // Copy the current node
+                    *outer_access = *node;
 
-                    // Parse the next index
                     advance(parser);
                     ASTNode *next_index_expr = parse_expression(parser);
 
@@ -132,17 +209,15 @@ ASTNode *parse_primary(Parser *parser) {
                     }
                     advance(parser);
 
-                    // Create a new variable access node that represents the nested access
                     node->type = NODE_VARIABLE_ACCESS;
-                    node->data.variable_access.name = NULL; // NULL name indicates this is a nested access
+                    node->data.variable_access.name = NULL;
                     node->data.variable_access.index_expr = next_index_expr;
-
-                    // Attach the previous access as a "parent" node
-                    // We'll need to modify the interpreter to handle this case
                     node->data.variable_access.parent_expr = outer_access;
                 }
             }
             break;
+        }
+
         default:
             fprintf(stderr, "Unexpected token in expression: %d\n", parser->current_token.type);
             exit(EXIT_FAILURE);
@@ -503,7 +578,7 @@ ASTNode *parse_function_declaration(Parser *parser) {
 
     
 
-    if (get_function_meta(imported_modules, func_name)) {
+    if (get_function_meta_from_modules(imported_modules, func_name)) {
         fprintf(stderr, "Function '%s' already defined in an imported module."
                         "\nCan't overwrite functions.\n"
                         "It is possible to see a full list of functions for each module in the documentation.", func_name);
@@ -611,24 +686,57 @@ ASTNode *parse_function_declaration(Parser *parser) {
 }
 
 ASTNode *parse_function_call(Parser *parser) {
-    advance(parser);
-    if (parser->current_token.type != TOKEN_IDENTIFIER) {
-        fprintf(stderr, "Expected function name after 'call'\n");
-        exit(EXIT_FAILURE);
-    }
-    char *func_name = strdup(parser->current_token.lexeme);
+    // consume 'call'
     advance(parser);
 
+    // must have at least an identifier
+    if (parser->current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "Expected function name or module name after 'call'\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // grab the first identifier (either a func name or module name)
+    char *first = strdup(parser->current_token.lexeme);
+    advance(parser);
+
+    char *module_name = NULL;
+    char *func_name = NULL;
+
+    // check for module-qualified call: module.func
+    if (parser->current_token.type == TOKEN_DOT) {
+        // 'module' is in `first`
+        module_name = first;
+
+        advance(parser); // consume '.'
+
+        if (parser->current_token.type != TOKEN_IDENTIFIER) {
+            fprintf(stderr, "Expected function name after '%s.'\n", module_name);
+            free(module_name);
+            exit(EXIT_FAILURE);
+        }
+
+        // now this identifier is the actual function name
+        func_name = strdup(parser->current_token.lexeme);
+        advance(parser);
+    } else {
+        // no module; `first` is the function name
+        func_name = first;
+    }
+
+    // expect '('
     if (parser->current_token.type != TOKEN_LPAREN) {
         fprintf(stderr, "Expected '(' after function name '%s'\n", func_name);
+        free(module_name);
         free(func_name);
         exit(EXIT_FAILURE);
     }
     advance(parser);
+
+    // parse arguments
     ASTNode **arguments = NULL;
     int arg_count = 0;
     while (parser->current_token.type != TOKEN_RPAREN) {
-        ASTNode *arg = NULL;
+        ASTNode *arg;
         if (parser->current_token.type == TOKEN_LBRACKET) {
             arg = parse_list_literal(parser);
         } else {
@@ -637,40 +745,41 @@ ASTNode *parse_function_call(Parser *parser) {
         arguments = safe_realloc(arguments, (arg_count + 1) * sizeof(ASTNode *));
         arguments[arg_count++] = arg;
 
-        if (parser->current_token.type == TOKEN_RPAREN) {
-            break;
-        }
-        if (parser->current_token.type != TOKEN_COMMA) {
+        if (parser->current_token.type == TOKEN_COMMA) {
+            advance(parser);
+        } else if (parser->current_token.type != TOKEN_RPAREN) {
             fprintf(stderr, "Expected ',' or ')' after argument in function call '%s'\n", func_name);
             for (int i = 0; i < arg_count; ++i) free_ast(arguments[i]);
             free(arguments);
+            free(module_name);
             free(func_name);
             exit(EXIT_FAILURE);
         }
-        advance(parser);
     }
-    advance(parser);
+    advance(parser);  // consume ')'
 
+    // expect ';'
     if (parser->current_token.type != TOKEN_SEMICOLON) {
-        fprintf(stderr, "Expected ';' after function call statement '%s'\n", func_name);
-        for (int i = 0; i < arg_count; ++i) {
-            if (arguments != NULL) {
-                free_ast(arguments[i]);
-            }
-        }
+        fprintf(stderr, "Expected ';' after function call '%s'\n", func_name);
+        for (int i = 0; i < arg_count; ++i) free_ast(arguments[i]);
         free(arguments);
+        free(module_name);
         free(func_name);
         exit(EXIT_FAILURE);
     }
-    advance(parser);
+    advance(parser);  // consume ';'
+
+    // build AST node
     ASTNode *node = safe_malloc(sizeof(ASTNode));
     node->type = NODE_FUNC_CALL;
     node->data.func_call.name = func_name;
     node->data.func_call.arguments = arguments;
     node->data.func_call.arg_count = arg_count;
+    node->data.func_call.module_name = module_name;  // NULL for unqualified calls
 
     return node;
 }
+
 
 ASTNode *parse_return(Parser* parser) {
     advance(parser);
@@ -1176,8 +1285,8 @@ ASTNode *parse_import(Parser *parser) {
     }
 
     // Deep copy the function meta map
-    node->data.import.module->function_meta_map = hashmap_deep_copy(module->function_meta_map, deep_copy_function_meta, NULL);
-    if (!node->data.import.module->function_meta_map) {
+    node->data.import.module->module_function_meta_map = hashmap_deep_copy(module->module_function_meta_map, deep_copy_function_meta, NULL);
+    if (!node->data.import.module->module_function_meta_map) {
         fprintf(stderr, "\nError: Failed to copy function meta map for module '%s'.\n", module_name);
         free(module_name);
         free(node->data.import.module->name);

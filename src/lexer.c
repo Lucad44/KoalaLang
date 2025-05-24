@@ -184,6 +184,9 @@ Token next_token(Lexer *lexer) {
         case ',':
             lexer->current_pos++;
             return (Token) {TOKEN_COMMA, NULL, 0, NULL, NULL};
+        case '.':
+            lexer->current_pos++;
+            return (Token) { TOKEN_DOT, NULL, 0, NULL, NULL};
         default:
             fprintf(stderr, "\nError: Unexpected character '%c' (ASCII %d)\n", current, current);
             exit(EXIT_FAILURE);
