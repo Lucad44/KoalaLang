@@ -61,6 +61,8 @@ bool variable_iter(const void *item, void *udata);
 
 uint64_t variable_hash(const void *item, uint64_t seed0, uint64_t seed1);
 
+void deep_copy_variable(void *dest, const void *src, void *udata);
+
 Variable *get_variable(struct hashmap *scope, char *name);
 
 char *trim_double(double value);

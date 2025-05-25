@@ -991,114 +991,139 @@ ASTNode *parse_list_declaration(Parser *parser) {
 }
 
 ASTNode *parse_expression_statement(Parser *parser) {
-     if (parser->current_token.type != TOKEN_IDENTIFIER) {
-
+    if (parser->current_token.type != TOKEN_IDENTIFIER) {
         fprintf(stderr, "Internal Parser \nError: Expected identifier.\n");
         exit(EXIT_FAILURE);
     }
 
-    char *target_name = strdup(parser->current_token.lexeme);
-    if (!target_name) {
-         fprintf(stderr, "\nError: Memory allocation failed for identifier name.\n");
-         exit(EXIT_FAILURE);
-    }
+    // Grab first identifier (could be variable name or module name)
+    char *first = strdup(parser->current_token.lexeme);
     advance(parser);
-    ASTNode *node = NULL;
-    switch (parser->current_token.type) {
-        case TOKEN_LBRACKET: {
-    // --- 1) parse the *first* [ expr ]  ---
-    advance(parser);                              // skip '['
-    ASTNode *first_idx = parse_expression(parser);
-    if (parser->current_token.type != TOKEN_RBRACKET) {
-        fprintf(stderr, "\nError: Expected ']' after list index in assignment target.\n");
-        free(target_name);
-        free_ast(first_idx);
-        exit(EXIT_FAILURE);
+
+    char *module_name = NULL;
+    char *var_name = NULL;
+
+    // Handle optional module.var
+    if (parser->current_token.type == TOKEN_DOT) {
+        module_name = first;
+        advance(parser);
+        if (parser->current_token.type != TOKEN_IDENTIFIER) {
+            fprintf(stderr, "\nError: Expected variable name after '%s.'\n", module_name);
+            free(module_name);
+            exit(EXIT_FAILURE);
+        }
+        var_name = strdup(parser->current_token.lexeme);
+        advance(parser);
+    } else {
+        var_name = first;
     }
-    advance(parser);                              // skip ']'
 
-    // --- 2) build the initial access node: matrix[first_idx] ---
-    ASTNode *access = safe_malloc(sizeof(ASTNode));
-    access->type = NODE_VARIABLE_ACCESS;
-    access->data.variable_access.name        = target_name;
-    access->data.variable_access.index_expr  = first_idx;
-    access->data.variable_access.parent_expr = NULL;
+    ASTNode *node = NULL;
 
-    // --- 3) now wrap any further “[ expr ]” on top of that ---
-    while (parser->current_token.type == TOKEN_LBRACKET) {
-        advance(parser);                          // skip '['
-        ASTNode *idx = parse_expression(parser);
+    // Check for list-style assignment
+    if (parser->current_token.type == TOKEN_LBRACKET) {
+        // 1) Parse the *first* [ expr ]
+        advance(parser);  // skip '['
+        ASTNode *first_idx = parse_expression(parser);
         if (parser->current_token.type != TOKEN_RBRACKET) {
             fprintf(stderr, "\nError: Expected ']' after list index in assignment target.\n");
-            free_ast(idx);
+            free(var_name);
+            free_ast(first_idx);
+            exit(EXIT_FAILURE);
+        }
+        advance(parser);  // skip ']'
+
+        // 2) Build the initial access node: var[first_idx]
+        ASTNode *access = safe_malloc(sizeof(ASTNode));
+        access->type = NODE_VARIABLE_ACCESS;
+        access->data.variable_access.name = var_name;
+        access->data.variable_access.index_expr = first_idx;
+        access->data.variable_access.parent_expr = NULL;
+
+        // Handle module scoping by wrapping in an expression node
+        if (module_name != NULL) {
+            ASTNode *module_expr = safe_malloc(sizeof(ASTNode));
+            module_expr->type = NODE_EXPR_VARIABLE;
+            module_expr->data.variable.name = var_name;
+            module_expr->data.variable.module_name = module_name;
+
+            ASTNode *wrapped_access = safe_malloc(sizeof(ASTNode));
+            wrapped_access->type = NODE_VARIABLE_ACCESS;
+            wrapped_access->data.variable_access.name = NULL;
+            wrapped_access->data.variable_access.index_expr = first_idx;
+            wrapped_access->data.variable_access.parent_expr = module_expr;
+
+            access = wrapped_access;
+        }
+
+        // 3) Handle further “[ expr ]” nesting
+        while (parser->current_token.type == TOKEN_LBRACKET) {
+            advance(parser);  // skip '['
+            ASTNode *idx = parse_expression(parser);
+            if (parser->current_token.type != TOKEN_RBRACKET) {
+                fprintf(stderr, "\nError: Expected ']' after list index in assignment target.\n");
+                free_ast(idx);
+                free_ast(access);
+                exit(EXIT_FAILURE);
+            }
+            advance(parser);  // skip ']'
+
+            ASTNode *wrapper = safe_malloc(sizeof(ASTNode));
+            wrapper->type = NODE_VARIABLE_ACCESS;
+            wrapper->data.variable_access.name = NULL;
+            wrapper->data.variable_access.index_expr = idx;
+            wrapper->data.variable_access.parent_expr = access;
+            access = wrapper;
+        }
+
+        // 4) Require '='
+        if (parser->current_token.type != TOKEN_OPERATOR_EQUAL) {
+            fprintf(stderr, "\nError: Expected '=' after list index target in assignment.\n");
             free_ast(access);
             exit(EXIT_FAILURE);
         }
-        advance(parser);                          // skip ']'
+        advance(parser);
 
-        ASTNode *wrapper = safe_malloc(sizeof(ASTNode));
-        wrapper->type = NODE_VARIABLE_ACCESS;
-        wrapper->data.variable_access.name        = NULL;   // nested
-        wrapper->data.variable_access.index_expr  = idx;
-        wrapper->data.variable_access.parent_expr = access;
-        access = wrapper;
-    }
+        // 5) Parse RHS
+        ASTNode *value_expr = parse_expression(parser);
 
-    // --- 4) require and consume the '='  ---
-    if (parser->current_token.type != TOKEN_OPERATOR_EQUAL) {
-        fprintf(stderr, "\nError: Expected '=' after list index target in assignment.\n");
-        free_ast(access);
-        exit(EXIT_FAILURE);
-    }
-    advance(parser);
-
-    // --- 5) parse the RHS expression  ---
-    ASTNode *value_expr = parse_expression(parser);
-
-    // --- 6) package it all into one assignment node  ---
-    node = safe_malloc(sizeof(ASTNode));
-    node->type = NODE_ASSIGNMENT;
-    node->data.assignment.target_name   = NULL;       // we're using target_access instead
-    node->data.assignment.index_expr    = NULL;
-    node->data.assignment.target_access = access;
-    node->data.assignment.value_expr    = value_expr;
-    break;
-}
-
-        case TOKEN_OPERATOR_EQUAL: {
-            advance(parser);
-            ASTNode *value_expr = parse_expression(parser);
-
-            node = safe_malloc(sizeof(ASTNode));
-            node->type = NODE_ASSIGNMENT;
-            node->data.assignment.target_name = target_name;
-            node->data.assignment.index_expr = NULL;
-            node->data.assignment.value_expr = value_expr;
-            break;
-        }
-        case TOKEN_OPERATOR_PLUS_PLUS:
-        case TOKEN_OPERATOR_MINUS_MINUS: {
-            const PostfixOperator op = (parser->current_token.type == TOKEN_OPERATOR_PLUS_PLUS) ? OP_INC : OP_DEC;
-            advance(parser);
-            node = safe_malloc(sizeof(ASTNode));
-            node->type = NODE_EXPR_POSTFIX;
-            node->data.postfix_expr.op = op;
-            node->data.postfix_expr.var_name = target_name;
-            break;
-        }
-        default:
-            fprintf(stderr, "\nError: Unexpected token '%s' after identifier '%s' in statement.\n",
-                    parser->current_token.lexeme ? parser->current_token.lexeme : "(unknown)",
-                    target_name);
-            free(target_name);
+        // 6) Construct assignment node
+        node = safe_malloc(sizeof(ASTNode));
+        node->type = NODE_ASSIGNMENT;
+        node->data.assignment.target_name = NULL;  // Using target_access instead
+        node->data.assignment.index_expr = NULL;
+        node->data.assignment.target_access = access;
+        node->data.assignment.value_expr = value_expr;
+    } else {
+        // Simple assignment: var = expr;
+        if (parser->current_token.type != TOKEN_OPERATOR_EQUAL) {
+            fprintf(stderr, "\nError: Expected '=' after variable name in assignment.\n");
+            free(var_name);
+            if (module_name) free(module_name);
             exit(EXIT_FAILURE);
+        }
+        advance(parser);
+
+        ASTNode *value_expr = parse_expression(parser);
+
+        node = safe_malloc(sizeof(ASTNode));
+        node->type = NODE_ASSIGNMENT;
+        node->data.assignment.target_name = var_name;
+        node->data.assignment.index_expr = NULL;
+        node->data.assignment.target_access = NULL;
+        node->data.assignment.value_expr = value_expr;
+
+        // Attach module name if present
+        if (module_name != NULL) {
+            ASTNode *access = safe_malloc(sizeof(ASTNode));
+            access->type = NODE_EXPR_VARIABLE;
+            access->data.variable.name = var_name;
+            access->data.variable.module_name = module_name;
+
+            node->data.assignment.target_name = NULL;
+            node->data.assignment.target_access = access;
+        }
     }
-    if (parser->current_token.type != TOKEN_SEMICOLON) {
-        fprintf(stderr, "\nError: Expected ';' after statement.\n");
-        free_ast(node);
-        exit(EXIT_FAILURE);
-    }
-    advance(parser);
 
     return node;
 }
@@ -1286,8 +1311,9 @@ ASTNode *parse_import(Parser *parser) {
 
     // Deep copy the function meta map
     node->data.import.module->module_function_meta_map = hashmap_deep_copy(module->module_function_meta_map, deep_copy_function_meta, NULL);
-    if (!node->data.import.module->module_function_meta_map) {
-        fprintf(stderr, "\nError: Failed to copy function meta map for module '%s'.\n", module_name);
+    node->data.import.module->module_variables_map = hashmap_deep_copy(module->module_variables_map, deep_copy_variable, NULL);
+    if (!node->data.import.module->module_function_meta_map || !node->data.import.module->module_variables_map) {
+        fprintf(stderr, "\nError: Failed to copy function and/or variable map for module '%s'.\n", module_name);
         free(module_name);
         free(node->data.import.module->name);
         free(node->data.import.module);

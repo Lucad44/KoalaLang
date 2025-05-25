@@ -21,7 +21,7 @@ static void __attribute__((constructor)) init_module_map() {
     struct hashmap *math_functions_map = hashmap_new(sizeof(FunctionMeta), 0, 0, 0,
         function_meta_hash, function_meta_compare, NULL, NULL);
     struct hashmap *math_variables_map = hashmap_new(sizeof(Variable), 0, 0, 0,
-        function_meta_hash, function_meta_compare, NULL, NULL);
+        variable_hash, variable_compare, NULL, NULL);
     // math functions
     hashmap_set(math_functions_map, &(FunctionMeta) { .name = "is_positive", .func = (void *) klc_is_positive,
         .dispatcher = dispatch_double_to_int, .ret_type = TYPE_INT, .param_types = {TYPE_DOUBLE}, .param_count = 1});
@@ -87,7 +87,7 @@ static void __attribute__((constructor)) init_module_map() {
     struct hashmap *trig_functions_map = hashmap_new(sizeof(FunctionMeta), 0, 0, 0,
         function_meta_hash, function_meta_compare, NULL, NULL);
         struct hashmap *trig_variables_map = hashmap_new(sizeof(Variable), 0, 0, 0,
-        function_meta_hash, function_meta_compare, NULL, NULL);
+        variable_hash, variable_compare, NULL, NULL);
     hashmap_set(trig_functions_map, &(FunctionMeta) { .name = "sin", .func = (void *) klc_sin,
             .dispatcher = dispatch_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_DOUBLE}, .param_count = 1});
     hashmap_set(trig_functions_map, &(FunctionMeta) { .name = "cos", .func = (void *) klc_cos,
@@ -126,8 +126,17 @@ hashmap_set(trig_functions_map, &(FunctionMeta) { .name = "arccsch", .func = (vo
 
 hashmap_set(trig_variables_map, &(Variable) { .name = "pi", .type = VAR_NUM, .value = 3.1415926535897932384626433 });
     
-    hashmap_set(module_map, &(Module) { .name = "math", .module_function_meta_map = math_functions_map, .module_variables_map = math_variables_map });
-    hashmap_set(module_map, &(Module) { .name = "trig", .module_function_meta_map = trig_functions_map, .module_variables_map = trig_variables_map });
+    Module *math_mod = malloc(sizeof(Module));
+    math_mod->name = strdup("math");
+    math_mod->module_function_meta_map = math_functions_map;
+    math_mod->module_variables_map = math_variables_map;
+    hashmap_set(module_map, math_mod);
+
+    Module *trig_mod = malloc(sizeof(Module));
+    trig_mod->name = strdup("trig");
+    trig_mod->module_function_meta_map = trig_functions_map;
+    trig_mod->module_variables_map = trig_variables_map;
+    hashmap_set(module_map, trig_mod);
 }
 
 int module_compare(const void *a, const void *b, void *udata) {

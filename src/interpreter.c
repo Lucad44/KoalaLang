@@ -7,6 +7,7 @@
 #include <setjmp.h>
 
 #include "ast.h"
+#include "hashmap.h"
 #include "variables.h"
 #include "functions.h"
 #include "memory.h"
@@ -1875,7 +1876,10 @@ ReturnValue evaluate_variable_access(const VariableAccessNode *node, struct hash
 }
 
 void execute_import(const ImportNode *node) {
-    Module *module = node->module;
+    Module *module = malloc(sizeof(Module));
+    module->name = strdup(node->module->name);
+    module->module_function_meta_map = hashmap_deep_copy(node->module->module_function_meta_map, deep_copy_function_meta, NULL);
+    module->module_variables_map = hashmap_deep_copy(node->module->module_variables_map, deep_copy_variable, NULL);
     if (!module) {
         fprintf(stderr, "\nError: Module import failed. Module '%s' not found.\n", module->name);
         exit(EXIT_FAILURE);
