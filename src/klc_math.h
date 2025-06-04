@@ -59,10 +59,18 @@ double klc_log2(double n);
 
 double klc_log(double n, double base);
 
-char *klc_integrate(const char *input_expr);
+char *klc_integrate(const char *input_expr, const char *variable);
+
+double klc_definite_integral(const char *input_expr, double a, double b);
 
 void klc_plot_function(const char *input_expr);
 
 void klc_plot_multiple_functions(const char *input_exprs[], int count);
+
+char *klc_simplify_expression(const char *input_expr);
+
+char *klc_differentiate(const char *input_expr, const char *variable);
+
+char *klc_polynomial_division(const char *dividend_expr, const char *divisor_expr);
 
 #endif

@@ -8,6 +8,7 @@
 #include "memory.h"
 #include "hashmap.h"
 
+
 void print_token_stream(const char *source) {
     Lexer debug_lexer;
     init_lexer(&debug_lexer, source);

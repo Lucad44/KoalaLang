@@ -1,5 +1,8 @@
 #include "klc_math.h"
 
+#include <symengine/cwrapper.h>
+#include <symengine/symengine_exception.h>
+
 #define EPSILON 0.00000000000000001
 #define PI 3.1415926535897932384626433
 #define E 2.718281828459045235360287471
@@ -240,25 +243,287 @@ void klc_plot_multiple_functions(const char *input_exprs[], const int count) {
     fclose(gp);
 }
 
-char *klc_integrate(const char *input_expr) {
-   /* basic x, expr, result;
-    basic_new_stack(x);
-    basic_new_stack(expr);
-    basic_new_stack(result);
-
-    symbol_set(x, "x");
-    if (basic_parse(expr, input_expr) != 0) {
-        fprintf(stderr, "\nError: Failed to parse expression: %s\n", input_expr);
-        basic_free_stack(x);
-        basic_free_stack(expr);
-        basic_free_stack(result);
-        exit(EXIT_FAILURE);
+char *klc_simplify_expression(const char *input_expr) {
+    if (!input_expr) {
+        return NULL;
     }
-    basic_integrate(result, expr, x);
-    char *result_str = basic_str(result);
-    basic_free_stack(x);
+    
+    // Create basic objects
+    basic expr, expanded;
+    basic_new_stack(expr);
+    basic_new_stack(expanded);
+    
+    char *result_str = NULL;
+    
+    // Parse the input expression
+    if (basic_parse(expr, input_expr) != SYMENGINE_NO_EXCEPTION) {
+        fprintf(stderr, "Error: Failed to parse expression: %s\n", input_expr);
+        goto cleanup;
+    }
+    
+    // Expand the expression using basic_expand
+    basic_expand(expanded, expr);
+    
+    // Convert the expanded expression back to string
+    char *temp_str = basic_str(expanded);
+    if (!temp_str) {
+        fprintf(stderr, "Error: Failed to convert expanded expression to string\n");
+        goto cleanup;
+    }
+    
+    // Allocate memory for the result and copy the string
+    size_t len = strlen(temp_str);
+    result_str = (char*)malloc(len + 1);
+    if (result_str) {
+        strcpy(result_str, temp_str);
+    }
+    
+    // Free the temporary string
+    basic_str_free(temp_str);
+    
+cleanup:
+    // Free the basic objects
     basic_free_stack(expr);
+    basic_free_stack(expanded);
+    
+    return result_str;
+}
+
+char *klc_differentiate(const char *input_expr, const char *variable) {
+    if (!input_expr || !variable) {
+        return NULL;
+    }
+    
+    // Create basic objects
+    basic expr, var, result;
+    basic_new_stack(expr);
+    basic_new_stack(var);
+    basic_new_stack(result);
+    
+    char *result_str = NULL;
+    
+    // Parse the input expression
+    if (basic_parse(expr, input_expr) != SYMENGINE_NO_EXCEPTION) {
+        fprintf(stderr, "Error: Failed to parse expression: %s\n", input_expr);
+        goto cleanup;
+    }
+    
+    // Create the variable symbol
+    symbol_set(var, variable);
+    
+    // Calculate the derivative (this function exists in SymEngine C wrapper)
+    basic_diff(result, expr, var);
+    
+    // Convert the result back to string
+    char *temp_str = basic_str(result);
+    if (!temp_str) {
+        fprintf(stderr, "Error: Failed to convert result to string\n");
+        goto cleanup;
+    }
+    
+    // Allocate memory for the result and copy the string
+    size_t len = strlen(temp_str);
+    result_str = (char*)malloc(len + 1);
+    if (result_str) {
+        strcpy(result_str, temp_str);
+    }
+    
+    // Free the temporary string
+    basic_str_free(temp_str);
+    
+cleanup:
+    // Free the basic objects
+    basic_free_stack(expr);
+    basic_free_stack(var);
     basic_free_stack(result);
+    
+    return result_str;
+}
+
+char *klc_integrate(const char *input_expr, const char *variable) {
+   /* if (!input_expr || !variable) {
+        return NULL;
+    }
+    
+    // Create basic objects
+    basic expr, var, result;
+    basic_new_stack(expr);
+    basic_new_stack(var);
+    basic_new_stack(result);
+    
+    char *result_str = NULL;
+    
+    // Parse the input expression
+    if (basic_parse(expr, input_expr) != SYMENGINE_NO_EXCEPTION) {
+        fprintf(stderr, "Error: Failed to parse expression: %s\n", input_expr);
+        goto cleanup;
+    }
+    
+    // Create the variable symbol
+    symbol_set(var, variable);
+    
+    // Calculate the indefinite integral
+    if (basic_(result, expr, var) != SYMENGINE_NO_EXCEPTION) {
+        fprintf(stderr, "Error: Failed to integrate expression\n");
+        goto cleanup;
+    }
+    
+    // Convert the result back to string
+    char *temp_str = basic_str(result);
+    if (!temp_str) {
+        fprintf(stderr, "Error: Failed to convert result to string\n");
+        goto cleanup;
+    }
+    
+    // Allocate memory for the result and copy the string
+    size_t len = strlen(temp_str);
+    result_str = (char*)malloc(len + 1);
+    if (result_str) {
+        strcpy(result_str, temp_str);
+    }
+    
+    // Free the temporary string
+    basic_str_free(temp_str);
+    
+cleanup:
+    // Free the basic objects
+    basic_free_stack(expr);
+    basic_free_stack(var);
+    basic_free_stack(result);
+    
     return result_str;*/
     return "TODO";
+}
+
+double evaluate_function(const char* expr_str, double x) {
+    // Initialize SymEngine basic variables
+    basic expr, x_var, x_val, result;
+    
+    // Initialize the basic variables
+    basic_new_stack(expr);
+    basic_new_stack(x_var);
+    basic_new_stack(x_val);
+    basic_new_stack(result);
+    
+    // Parse the expression string
+    if (basic_parse(expr, expr_str) != SYMENGINE_NO_EXCEPTION) {
+        fprintf(stderr, "Error parsing expression: %s\n", expr_str);
+        basic_free_stack(expr);
+        basic_free_stack(x_var);
+        basic_free_stack(x_val);
+        basic_free_stack(result);
+        return 0.0;
+    }
+    
+    // Create symbol 'x'
+    symbol_set(x_var, "x");
+    
+    // Create the numeric value for substitution
+    real_double_set_d(x_val, x);
+    
+    // Substitute x with the given value using basic_subs2
+    basic_subs2(result, expr, x_var, x_val);
+    
+    // Convert result to double
+    double output = real_double_get_d(result);
+    
+    // Clean up
+    basic_free_stack(expr);
+    basic_free_stack(x_var);
+    basic_free_stack(x_val);
+    basic_free_stack(result);
+    
+    return output;
+}
+
+double integrate_simpson(const char *func, double a, double b, int n) {
+    // n must be even for Simpson's rule
+    if (n % 2 != 0) n++;
+    
+    double h = (b - a) / n;
+    double sum = evaluate_function(func, a) + evaluate_function(func, b);
+    
+    // Add terms with alternating coefficients 4 and 2
+    for (int i = 1; i < n; i++) {
+        double x = a + i * h;
+        if (i % 2 == 1) {
+            sum += 4 * evaluate_function(func, x);  // Odd indices get coefficient 4
+        } else {
+            sum += 2 * evaluate_function(func, x);  // Even indices get coefficient 2
+        }
+    }
+    
+    return sum * h / 3.0;
+}
+
+double klc_definite_integral(const char *input_expr, double a, double b) {
+    return integrate_simpson(input_expr, a, b, 1000);
+}
+
+char *klc_polynomial_division(const char *dividend_expr, const char *divisor_expr) {
+  /* // Initialize SymEngine symbols and basic objects
+    basic dividend, divisor, x, quotient, remainder;
+    basic_new_stack(dividend);
+    basic_new_stack(divisor);
+    basic_new_stack(x);
+    basic_new_stack(quotient);
+    basic_new_stack(remainder);
+    
+    // Create symbol 'x'
+    symbol_set(x, "x");
+    
+    // Parse dividend expression
+    if (basic_parse(dividend, dividend_expr) != 0) {
+        return NULL;
+    }
+    
+    // Parse divisor expression
+    if (basic_parse(divisor, divisor_expr) != 0) {
+        basic_free_stack(dividend);
+        return NULL;
+    }
+
+    
+    
+    // Perform polynomial division
+    int result = symengine_pdiv(dividend, divisor, x, quotient, remainder);
+    if (result != 0) {
+        basic_free_stack(dividend);
+        basic_free_stack(divisor);
+        basic_free_stack(x);
+        basic_free_stack(quotient);
+        basic_free_stack(remainder);
+        return NULL;
+    }
+    
+    // Convert quotient and remainder to strings
+    char *q_str = basic_str(quotient);
+    char *r_str = basic_str(remainder);
+    
+    // Format result as "(quotient)(remainder)"
+    size_t len = strlen(q_str) + strlen(r_str) + 3; // +3 for "()" and null terminator
+    char *output = malloc(len);
+    if (output == NULL) {
+        free(q_str);
+        free(r_str);
+        basic_free_stack(dividend);
+        basic_free_stack(divisor);
+        basic_free_stack(x);
+        basic_free_stack(quotient);
+        basic_free_stack(remainder);
+        return NULL;
+    }
+    snprintf(output, len, "(%s)(%s)", q_str, r_str);
+    
+    // Clean up
+    free(q_str);
+    free(r_str);
+    basic_free_stack(dividend);
+    basic_free_stack(divisor);
+    basic_free_stack(x);
+    basic_free_stack(quotient);
+    basic_free_stack(remainder);
+    
+    return output;*/
+    return "tidi";
 }

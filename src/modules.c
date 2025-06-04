@@ -76,6 +76,14 @@ static void __attribute__((constructor)) init_module_map() {
            .dispatcher = dispatch_string_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING}, .param_count = 1});
     hashmap_set(math_functions_map, &(FunctionMeta) { .name = "plot_multiple_functions", .func = (void *) klc_plot_multiple_functions,
            .dispatcher = dispatch_string_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING_ARRAY}, .param_count = 1});
+    hashmap_set(math_functions_map, &(FunctionMeta) { .name = "simplify_expression", .func = (void *) klc_simplify_expression,
+           .dispatcher = dispatch_string_to_string, .ret_type = TYPE_STRING, .param_types = {TYPE_STRING}, .param_count = 1});
+    hashmap_set(math_functions_map, &(FunctionMeta) { .name = "differentiate", .func = (void *) klc_differentiate,
+        .dispatcher = dispatch_string_string_to_string, .ret_type = TYPE_STRING, .param_types = {TYPE_STRING, TYPE_STRING}, .param_count = 2});
+    hashmap_set(math_functions_map, &(FunctionMeta) { .name = "polynomial_division", .func = (void *) klc_polynomial_division,
+        .dispatcher = dispatch_string_string_to_string, .ret_type = TYPE_STRING, .param_types = {TYPE_STRING, TYPE_STRING}, .param_count = 2});
+    hashmap_set(math_functions_map, &(FunctionMeta) { .name = "definite_integral", .func = (void *) klc_definite_integral,
+        .dispatcher = dispatch_string_double_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_STRING, TYPE_DOUBLE, TYPE_DOUBLE}, .param_count = 3});
 
     hashmap_set(math_variables_map, &(Variable) { .name = "pi", .type = VAR_NUM, .value = 3.1415926535897932384626433 });
     hashmap_set(math_variables_map, &(Variable) { .name = "e", .type = VAR_NUM, .value = 2.718281828459045235360287471 });
@@ -271,4 +279,23 @@ void dispatch_const_char_ptr_array_to_void(void* fptr, void** args, void* ret_ou
     void (*func)(const char*[]) = (void (*)(const char*[]))fptr;
     const char** exprs = (const char**)args[0];
     func(exprs);
+}
+
+void dispatch_string_string_to_string(void *func_ptr, void **args, void *ret_out) {
+    char *(*func)(char *, char *) = (char *(*)(char *, char *)) func_ptr;
+    char *input1 = *(char **) args[0];
+    char *input2 = *(char **) args[1];
+    *(char **) ret_out = func(input1, input2);
+}
+
+void dispatch_string_double_double_to_double(void *fptr, void **args, void *ret_out) {
+    double (*func)(const char *, double, double) = (double (*)(const char *, double, double))fptr;
+
+    const char* input_expr = *(const char **) args[0];
+    double a = *(double *) args[1];
+    double b = *(double *) args[2];
+
+    if (ret_out) {
+        *(double *) ret_out = func(input_expr, a, b);
+    }
 }

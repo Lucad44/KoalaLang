@@ -122,7 +122,9 @@ typedef struct {
 typedef struct {
     char *name;
     VarType type;
+    VarType nested_element_type;
     bool is_list;
+    bool is_nested;
 } Parameter;
 
 typedef struct {

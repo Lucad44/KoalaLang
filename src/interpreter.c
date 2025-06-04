@@ -977,6 +977,7 @@ ReturnValue execute_function_body(const ASTNode *body, struct hashmap *scope, Re
 void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, ReturnContext *caller_ret_ctx) {
     const FunctionMeta *c_func = get_function_meta_from_module(imported_modules, func_call->name, func_call->module_name);
     if (c_func) {
+        // Handle C function calls (existing code remains the same)
         if (func_call->arg_count != c_func->param_count) {
             fprintf(stderr, "\nError: Function %s expects %d arguments, got %d\n",
                     func_call->name, c_func->param_count, func_call->arg_count);
@@ -1104,6 +1105,7 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
         return;
     }
 
+    // Handle user-defined function calls
     const Function *function = hashmap_get(function_map, &(Function) { .name = func_call->name });
     if (!function) {
         fprintf(stderr, "Undefined function: %s.\n"
@@ -1124,7 +1126,6 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
         exit(EXIT_FAILURE);
     }
 
-
     for (int i = 0; i < func_call->arg_count; i++) {
         const Parameter *param = &function->parameters[i];
         const ASTNode *arg_node = func_call->arguments[i];
@@ -1132,127 +1133,265 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
 
         if (param->is_list) {
             ListNode *list_to_pass_head = NULL;
-            const VarType list_element_type = param->type;
+            
+            if (param->is_nested) {
+                // Handle nested lists (list[list[type]])
+                if (arg_node->type == NODE_LIST_LITERAL) {
+                    const ListLiteralNode *literal_node = &arg_node->data.list_literal;
+                    ListNode *current_new_node = NULL;
 
-            if (arg_node->type == NODE_LIST_LITERAL) {
-                 const ListLiteralNode *literal_node = &arg_node->data.list_literal;
-                 ListNode *current_new_node = NULL;
+                    for (int j = 0; j < literal_node->element_count; ++j) {
+                        ListElement element;
+                        element.type = VAR_LIST; // Outer type is list
+                        
+                        // Parse inner list
+                        if (literal_node->elements[j]->type == NODE_LIST_LITERAL) {
+                            const ListLiteralNode *inner_literal = &literal_node->elements[j]->data.list_literal;
+                            ListNode *inner_list_head = NULL;
+                            ListNode *inner_current = NULL;
+                            
+                            for (int k = 0; k < inner_literal->element_count; ++k) {
+                                ListElement inner_element;
+                                inner_element.type = param->nested_element_type;
+                                
+                                if (param->nested_element_type == VAR_NUM) {
+                                    ReturnValue val = evaluate_expression(inner_literal->elements[k], scope, &arg_eval_ctx);
+                                    if (val.type != RET_NUM) {
+                                        fprintf(stderr, "Error: Expected number in nested list element\n");
+                                        free_list(list_to_pass_head);
+                                        free_list(inner_list_head);
+                                        free_function_scope_lists(function_scope);
+                                        hashmap_free(function_scope);
+                                        exit(EXIT_FAILURE);
+                                    }
+                                    inner_element.value.num_val = val.value.num_val;
+                                } else if (param->nested_element_type == VAR_STR) {
+                                    ReturnValue val = evaluate_expression(inner_literal->elements[k], scope, &arg_eval_ctx);
+                                    if (val.type != RET_STR) {
+                                        fprintf(stderr, "Error: Expected string in nested list element\n");
+                                        free_list(list_to_pass_head);
+                                        free_list(inner_list_head);
+                                        free_function_scope_lists(function_scope);
+                                        hashmap_free(function_scope);
+                                        exit(EXIT_FAILURE);
+                                    }
+                                    inner_element.value.str_val = strdup(val.value.str_val);
+                                    free_return_value(val.type, &val);
+                                }
+                                
+                                ListNode *inner_node = create_list_node(inner_element);
+                                if (!inner_node) {
+                                    fprintf(stderr, "Error: Failed to create inner list node\n");
+                                    free_list(list_to_pass_head);
+                                    free_list(inner_list_head);
+                                    free_function_scope_lists(function_scope);
+                                    hashmap_free(function_scope);
+                                    exit(EXIT_FAILURE);
+                                }
+                                
+                                if (inner_list_head == NULL) {
+                                    inner_list_head = inner_node;
+                                    inner_current = inner_node;
+                                } else {
+                                    inner_current->next = inner_node;
+                                    inner_current = inner_node;
+                                }
+                            }
+                            
+                            element.value.nested_list.element_type = param->nested_element_type;
+                            element.value.nested_list.is_nested = true;
+                            element.value.nested_list.head = inner_list_head;
+                        } else {
+                            fprintf(stderr, "Error: Expected nested list literal for nested list parameter\n");
+                            free_list(list_to_pass_head);
+                            free_function_scope_lists(function_scope);
+                            hashmap_free(function_scope);
+                            exit(EXIT_FAILURE);
+                        }
+                        
+                        ListNode *new_node = create_list_node(element);
+                        if (!new_node) {
+                            fprintf(stderr, "Error: Failed to create list node for nested list\n");
+                            free_list(list_to_pass_head);
+                            free_function_scope_lists(function_scope);
+                            hashmap_free(function_scope);
+                            exit(EXIT_FAILURE);
+                        }
+                        
+                        if (list_to_pass_head == NULL) {
+                            list_to_pass_head = new_node;
+                            current_new_node = new_node;
+                        } else {
+                            current_new_node->next = new_node;
+                            current_new_node = new_node;
+                        }
+                    }
+                } else if (arg_node->type == NODE_EXPR_VARIABLE) {
+                    char *list_arg_name = arg_node->data.variable.name;
+                    Variable *list_var_caller = get_variable(scope ? scope : variable_map, list_arg_name);
 
-                 for (int j = 0; j < literal_node->element_count; ++j) {
-                     ListElement element;
-                     element.type = list_element_type;
-                     if (list_element_type == VAR_NUM) {
-                         element.value.num_val = evaluate_expression(literal_node->elements[j], scope,
-                             &arg_eval_ctx).value.num_val;
-                     } else if (list_element_type == VAR_STR) {
-                         ReturnValue value_val = evaluate_expression(literal_node->elements[j], scope, &arg_eval_ctx);
-                         if (value_val.type != RET_STR) {
-                             fprintf(stderr, "Error evaluating string element %d for list literal argument %d "
-                                             "in call to '%s'.\n", j, i + 1, func_call->name);
-                             free_list(list_to_pass_head);
-                             free_function_scope_lists(function_scope);
-                             hashmap_free(function_scope);
-                             exit(EXIT_FAILURE);
+                    if (!list_var_caller) {
+                        fprintf(stderr, "\nError: Nested list variable '%s' not found\n", list_arg_name);
+                        free_function_scope_lists(function_scope);
+                        hashmap_free(function_scope);
+                        exit(EXIT_FAILURE);
+                    }
+                    if (list_var_caller->type != VAR_LIST) {
+                        fprintf(stderr, "\nError: Variable '%s' is not a list\n", list_arg_name);
+                        free_function_scope_lists(function_scope);
+                        hashmap_free(function_scope);
+                        exit(EXIT_FAILURE);
+                    }
+                    if (!list_var_caller->value.list_val.is_nested) {
+                        fprintf(stderr, "\nError: Variable '%s' is not a nested list\n", list_arg_name);
+                        free_function_scope_lists(function_scope);
+                        hashmap_free(function_scope);
+                        exit(EXIT_FAILURE);
+                    }
+                    
+                    list_to_pass_head = deep_copy_list(list_var_caller->value.list_val.head);
+                }
+                
+                Variable function_param_var = {
+                    .name = strdup(param->name),
+                    .type = VAR_LIST,
+                    .value = { 
+                        .list_val = { 
+                            .element_type = VAR_LIST,
+                            .nested_element_type = param->nested_element_type,
+                            .is_nested = true,
+                            .head = list_to_pass_head 
+                        } 
+                    }
+                };
+                
+                hashmap_set(function_scope, &function_param_var);
+                
+            } else {
+                // Handle simple lists (existing code with minor modifications)
+                const VarType list_element_type = param->type;
+
+                if (arg_node->type == NODE_LIST_LITERAL) {
+                    const ListLiteralNode *literal_node = &arg_node->data.list_literal;
+                    ListNode *current_new_node = NULL;
+
+                    for (int j = 0; j < literal_node->element_count; ++j) {
+                        ListElement element;
+                        element.type = list_element_type;
+                        if (list_element_type == VAR_NUM) {
+                            element.value.num_val = evaluate_expression(literal_node->elements[j], scope,
+                                &arg_eval_ctx).value.num_val;
+                        } else if (list_element_type == VAR_STR) {
+                            ReturnValue value_val = evaluate_expression(literal_node->elements[j], scope, &arg_eval_ctx);
+                            if (value_val.type != RET_STR) {
+                                fprintf(stderr, "Error evaluating string element %d for list literal argument %d "
+                                                "in call to '%s'.\n", j, i + 1, func_call->name);
+                                free_list(list_to_pass_head);
+                                free_function_scope_lists(function_scope);
+                                hashmap_free(function_scope);
+                                exit(EXIT_FAILURE);
+                            }
+                            element.value.str_val = strdup(value_val.value.str_val);
+                            free_return_value(value_val.type, &value_val);
+                            if (!element.value.str_val) {
+                                fprintf(stderr, "Error evaluating string element %d for list literal argument %d"
+                                                " in call to '%s'.\n",
+                                         j, i + 1, func_call->name);
+                                free_list(list_to_pass_head);
+                                free_function_scope_lists(function_scope);
+                                hashmap_free(function_scope);
+                                exit(EXIT_FAILURE);
+                            }
+                        } else {
+                             fprintf(stderr, "Internal \nError: Unsupported list element type %d for parameter '%s'"
+                                             " in function '%s'.\n",
+                                     list_element_type, param->name, func_call->name);
+                            free_list(list_to_pass_head);
+                            free_function_scope_lists(function_scope);
+                            hashmap_free(function_scope);
+                            exit(EXIT_FAILURE);
+                        }
+
+                        ListNode *new_node = create_list_node(element);
+                         if (!new_node) {
+                              fprintf(stderr, "\nError: Failed to allocate memory for list node from literal for function '%s'.\n", func_call->name);
+                              if (list_element_type == VAR_STR && element.value.str_val) free(element.value.str_val);
+                              free_list(list_to_pass_head);
+                              free_function_scope_lists(function_scope);
+                              hashmap_free(function_scope);
+                              exit(EXIT_FAILURE);
                          }
-                         element.value.str_val = strdup(value_val.value.str_val);
-                         free_return_value(value_val.type, &value_val);
-                         if (!element.value.str_val) {
-                             fprintf(stderr, "Error evaluating string element %d for list literal argument %d"
-                                             " in call to '%s'.\n",
-                                      j, i + 1, func_call->name);
-                             free_list(list_to_pass_head);
-                             free_function_scope_lists(function_scope);
-                             hashmap_free(function_scope);
-                             exit(EXIT_FAILURE);
-                         }
-                     } else {
-                          fprintf(stderr, "Internal \nError: Unsupported list element type %d for parameter '%s'"
-                                          " in function '%s'.\n",
-                                  list_element_type, param->name, func_call->name);
-                         free_list(list_to_pass_head);
+                        if (list_to_pass_head == NULL) {
+                            list_to_pass_head = new_node;
+                            current_new_node = new_node;
+                       } else if (current_new_node != NULL) {
+                            current_new_node->next = new_node;
+                            current_new_node = new_node;
+                       }
+                    }
+
+                } else if (arg_node->type == NODE_EXPR_VARIABLE) {
+                    char *list_arg_name = arg_node->data.variable.name;
+                    Variable *list_var_caller = get_variable(scope ? scope : variable_map, list_arg_name);
+
+                    if (!list_var_caller) {
+                        fprintf(stderr, "\nError: List variable '%s' (argument %d for function '%s') not found in caller scope.\n",
+                                 list_arg_name, i + 1, func_call->name);
+                        free_function_scope_lists(function_scope);
+                        hashmap_free(function_scope);
+                        exit(EXIT_FAILURE);
+                    }
+                    if (list_var_caller->type != VAR_LIST) {
+                         fprintf(stderr, "\nError: Variable '%s' passed as argument %d to function '%s' is not a list.\n",
+                                 list_arg_name, i + 1, func_call->name);
                          free_function_scope_lists(function_scope);
                          hashmap_free(function_scope);
                          exit(EXIT_FAILURE);
-                     }
-
-                     ListNode *new_node = create_list_node(element);
-                      if (!new_node) {
-                           fprintf(stderr, "\nError: Failed to allocate memory for list node from literal for function '%s'.\n", func_call->name);
-                           if (list_element_type == VAR_STR && element.value.str_val) free(element.value.str_val);
-                           free_list(list_to_pass_head);
-                           free_function_scope_lists(function_scope);
-                           hashmap_free(function_scope);
-                           exit(EXIT_FAILURE);
-                      }
-                     if (list_to_pass_head == NULL) {
-                         list_to_pass_head = new_node;
-                         current_new_node = new_node;
-                    } else if (current_new_node != NULL) {
-                         current_new_node->next = new_node;
-                         current_new_node = new_node;
                     }
-                 }
+                    if (list_var_caller->value.list_val.element_type != list_element_type) {
+                         fprintf(stderr, "\nError: Type mismatch for list argument %d ('%s') for function '%s'. Expected list of type %d, got %d.\n",
+                                 i + 1, list_arg_name, func_call->name, list_element_type, list_var_caller->value.list_val.element_type);
+                         free_function_scope_lists(function_scope);
+                         hashmap_free(function_scope);
+                         exit(EXIT_FAILURE);
+                    }
+                    list_to_pass_head = deep_copy_list(list_var_caller->value.list_val.head);
+                    if (!list_to_pass_head && list_var_caller->value.list_val.head != NULL) {
+                          fprintf(stderr, "\nError: Failed to copy list argument %d for function '%s'.\n", i + 1, func_call->name);
+                          free_function_scope_lists(function_scope);
+                          hashmap_free(function_scope);
+                          exit(EXIT_FAILURE);
+                    }
+               } else {
+                    fprintf(stderr, "\nError: Invalid argument type (%d) for list parameter '%s' in function '%s'. Expected list variable or literal.\n",
+                            arg_node->type, param->name, func_call->name);
+                    free_function_scope_lists(function_scope);
+                    hashmap_free(function_scope);
+                    exit(EXIT_FAILURE);
+               }
+               
+               Variable function_param_var = {
+                   .name = strdup(param->name),
+                   .type = VAR_LIST,
+                   .value = { .list_val = { .element_type = list_element_type, .head = list_to_pass_head } }
+               };
+               if (!function_param_var.name) {
+                    fprintf(stderr, "\nError: Failed to allocate memory for parameter name '%s'.\n", param->name);
+                    free_list(list_to_pass_head);
+                    free_function_scope_lists(function_scope);
+                    hashmap_free(function_scope);
+                    exit(EXIT_FAILURE);
+               }
 
-            } else if (arg_node->type == NODE_EXPR_VARIABLE) {
-                 char *list_arg_name = arg_node->data.variable.name;
-                 Variable *list_var_caller = get_variable(scope ? scope : variable_map, list_arg_name);
-
-                 if (!list_var_caller) {
-                     fprintf(stderr, "\nError: List variable '%s' (argument %d for function '%s') not found in caller scope.\n",
-                              list_arg_name, i + 1, func_call->name);
+               hashmap_set(function_scope, &function_param_var);
+               if (hashmap_oom(function_scope)) {
+                     fprintf(stderr, "\nError: Out of memory setting list parameter '%s'.\n", param->name);
+                     free(function_param_var.name);
+                     free_list(list_to_pass_head);
                      free_function_scope_lists(function_scope);
                      hashmap_free(function_scope);
                      exit(EXIT_FAILURE);
-                 }
-                 if (list_var_caller->type != VAR_LIST) {
-                      fprintf(stderr, "\nError: Variable '%s' passed as argument %d to function '%s' is not a list.\n",
-                              list_arg_name, i + 1, func_call->name);
-                      free_function_scope_lists(function_scope);
-                      hashmap_free(function_scope);
-                      exit(EXIT_FAILURE);
-                 }
-                 if (list_var_caller->value.list_val.element_type != list_element_type) {
-                      fprintf(stderr, "\nError: Type mismatch for list argument %d ('%s') for function '%s'. Expected list of type %d, got %d.\n",
-                              i + 1, list_arg_name, func_call->name, list_element_type, list_var_caller->value.list_val.element_type);
-                      free_function_scope_lists(function_scope);
-                      hashmap_free(function_scope);
-                      exit(EXIT_FAILURE);
-                 }
-                 list_to_pass_head = deep_copy_list(list_var_caller->value.list_val.head);
-                 if (!list_to_pass_head && list_var_caller->value.list_val.head != NULL) {
-                       fprintf(stderr, "\nError: Failed to copy list argument %d for function '%s'.\n", i + 1, func_call->name);
-                       free_function_scope_lists(function_scope);
-                       hashmap_free(function_scope);
-                       exit(EXIT_FAILURE);
-                 }
-            } else {
-                 fprintf(stderr, "\nError: Invalid argument type (%d) for list parameter '%s' in function '%s'. Expected list variable or literal.\n",
-                         arg_node->type, param->name, func_call->name);
-                 free_function_scope_lists(function_scope);
-                 hashmap_free(function_scope);
-                 exit(EXIT_FAILURE);
-            }
-            Variable function_param_var = {
-                .name = strdup(param->name),
-                .type = VAR_LIST,
-                .value = { .list_val = { .element_type = list_element_type, .head = list_to_pass_head } }
-            };
-            if (!function_param_var.name) {
-                 fprintf(stderr, "\nError: Failed to allocate memory for parameter name '%s'.\n", param->name);
-                 free_list(list_to_pass_head);
-                 free_function_scope_lists(function_scope);
-                 hashmap_free(function_scope);
-                 exit(EXIT_FAILURE);
-            }
-
-            hashmap_set(function_scope, &function_param_var);
-            if (hashmap_oom(function_scope)) {
-                  fprintf(stderr, "\nError: Out of memory setting list parameter '%s'.\n", param->name);
-                  free(function_param_var.name);
-                  free_list(list_to_pass_head);
-                  free_function_scope_lists(function_scope);
-                  hashmap_free(function_scope);
-                  exit(EXIT_FAILURE);
+               }
             }
 
         } else if (param->type == VAR_NUM) {

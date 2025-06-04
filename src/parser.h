@@ -48,4 +48,6 @@ ASTNode *parse_assignment(Parser *parser);
 
 ASTNode *parse_import(Parser *parser);
 
+bool parse_parameter_type(Parser *parser, Parameter *param);
+
 #endif
