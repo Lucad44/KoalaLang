@@ -243,6 +243,96 @@ void klc_plot_multiple_functions(const char *input_exprs[], const int count) {
     fclose(gp);
 }
 
+void klc_plot_2vars_function(const char *input_expr) {
+
+    FILE *gnuplot = popen("gnuplot -persistent", "w");
+    if (gnuplot == NULL) {
+        fprintf(stderr, "Could not open pipe to Gnuplot.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Gnuplot setup
+    fprintf(gnuplot, "set title '3D Plot: %s'\n", input_expr);
+    fprintf(gnuplot, "set xlabel 'X'\n");
+    fprintf(gnuplot, "set ylabel 'Y'\n");
+    fprintf(gnuplot, "set zlabel 'Z'\n");
+    fprintf(gnuplot, "set xrange [-10:10]\n");
+    fprintf(gnuplot, "set yrange [-10:10]\n");
+    fprintf(gnuplot, "set zrange [-1:1]\n");
+    fprintf(gnuplot, "set hidden3d\n");
+    fprintf(gnuplot, "set isosamples 60,60\n");  // Higher resolution
+
+    // Plot the input expression directly
+    fprintf(gnuplot, "splot %s with lines title ''\n", input_expr);
+
+    fflush(gnuplot);
+    // Optionally: keep gnuplot open after exit
+    // pclose(gnuplot); // Uncomment if you want to close it automatically
+}
+
+void klc_plot_csv(const char *csv_path) {
+    FILE *file = fopen(csv_path, "r");
+    if (!file) {
+        fprintf(stderr, "Error: Could not open CSV file: %s\n", csv_path);
+        return;
+    }
+
+    // Read first line (header)
+    char line[4096];
+    if (!fgets(line, sizeof(line), file)) {
+        fprintf(stderr, "Error: Failed to read CSV file.\n");
+        fclose(file);
+        return;
+    }
+    fclose(file);
+
+    // Parse header names
+    char *headers[128];
+    int num_columns = 0;
+    char *token = strtok(line, ",\n\r");
+    while (token && num_columns < 128) {
+        headers[num_columns] = strdup(token);  // Copy token
+        num_columns++;
+        token = strtok(NULL, ",\n\r");
+    }
+
+    if (num_columns < 2) {
+        fprintf(stderr, "Error: Need at least two columns to plot.\n");
+        return;
+    }
+
+    FILE *gnuplot = popen("gnuplot -persistent", "w");
+    if (!gnuplot) {
+        fprintf(stderr, "Error: Could not open pipe to Gnuplot.\n");
+        return;
+    }
+
+    // Gnuplot setup
+    fprintf(gnuplot, "set datafile separator ','\n");
+    fprintf(gnuplot, "set title 'CSV Plot: %s'\n", csv_path);
+    fprintf(gnuplot, "set xlabel '%s'\n", headers[0]);
+    fprintf(gnuplot, "set ylabel 'Y'\n");
+    fprintf(gnuplot, "set key outside\n");
+    fprintf(gnuplot, "set grid\n");
+
+    // Begin plot command
+    fprintf(gnuplot, "plot ");
+
+    for (int col = 1; col < num_columns; col++) {
+        fprintf(gnuplot,
+            "'%s' every ::1 using 1:%d with lines title '%s'%s",
+            csv_path, col + 1, headers[col],
+            (col < num_columns - 1) ? ", " : "\n");
+    }
+
+    fflush(gnuplot);
+
+    // Free allocated header names
+    for (int i = 0; i < num_columns; i++) {
+        free(headers[i]);
+    }
+}
+
 char *klc_simplify_expression(const char *input_expr) {
     if (!input_expr) {
         return NULL;
@@ -395,7 +485,7 @@ cleanup:
     return "TODO";
 }
 
-double evaluate_function(const char* expr_str, double x) {
+double klc_evaluate_function(const char* expr_str, double x) {
     // Initialize SymEngine basic variables
     basic expr, x_var, x_val, result;
     
@@ -441,15 +531,15 @@ double integrate_simpson(const char *func, double a, double b, int n) {
     if (n % 2 != 0) n++;
     
     double h = (b - a) / n;
-    double sum = evaluate_function(func, a) + evaluate_function(func, b);
+    double sum = klc_evaluate_function(func, a) + klc_evaluate_function(func, b);
     
     // Add terms with alternating coefficients 4 and 2
     for (int i = 1; i < n; i++) {
         double x = a + i * h;
         if (i % 2 == 1) {
-            sum += 4 * evaluate_function(func, x);  // Odd indices get coefficient 4
+            sum += 4 * klc_evaluate_function(func, x);  // Odd indices get coefficient 4
         } else {
-            sum += 2 * evaluate_function(func, x);  // Even indices get coefficient 2
+            sum += 2 * klc_evaluate_function(func, x);  // Even indices get coefficient 2
         }
     }
     

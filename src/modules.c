@@ -76,8 +76,14 @@ static void __attribute__((constructor)) init_module_map() {
            .dispatcher = dispatch_string_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING}, .param_count = 1});
     hashmap_set(math_functions_map, &(FunctionMeta) { .name = "plot_multiple_functions", .func = (void *) klc_plot_multiple_functions,
            .dispatcher = dispatch_string_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING_ARRAY}, .param_count = 1});
+    hashmap_set(math_functions_map, &(FunctionMeta) { .name = "plot_2vars_function", .func = (void *) klc_plot_2vars_function,
+           .dispatcher = dispatch_string_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING}, .param_count = 1});
+    hashmap_set(math_functions_map, &(FunctionMeta) { .name = "plot_csv", .func = (void *) klc_plot_csv,
+           .dispatcher = dispatch_string_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING}, .param_count = 1});
     hashmap_set(math_functions_map, &(FunctionMeta) { .name = "simplify_expression", .func = (void *) klc_simplify_expression,
            .dispatcher = dispatch_string_to_string, .ret_type = TYPE_STRING, .param_types = {TYPE_STRING}, .param_count = 1});
+    hashmap_set(math_functions_map, &(FunctionMeta) { .name = "evaluate_function", .func = (void *) klc_evaluate_function,
+        .dispatcher = dispatch_string_double_to_double, .ret_type = TYPE_DOUBLE, .param_types = {TYPE_STRING, TYPE_DOUBLE}, .param_count = 2});
     hashmap_set(math_functions_map, &(FunctionMeta) { .name = "differentiate", .func = (void *) klc_differentiate,
         .dispatcher = dispatch_string_string_to_string, .ret_type = TYPE_STRING, .param_types = {TYPE_STRING, TYPE_STRING}, .param_count = 2});
     hashmap_set(math_functions_map, &(FunctionMeta) { .name = "polynomial_division", .func = (void *) klc_polynomial_division,
@@ -297,5 +303,16 @@ void dispatch_string_double_double_to_double(void *fptr, void **args, void *ret_
 
     if (ret_out) {
         *(double *) ret_out = func(input_expr, a, b);
+    }
+}
+
+void dispatch_string_double_to_double(void* fptr, void** args, void* ret_out) {
+    double (*func)(const char*, double) = (double (*)(const char*, double))fptr;
+
+    const char* s = *(const char**)args[0];
+    double d = *(double*)args[1];
+
+    if (ret_out) {
+        *(double*)ret_out = func(s, d);
     }
 }

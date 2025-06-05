@@ -720,6 +720,13 @@ ASTNode *parse_program(Parser *parser) {
                 break;
             case TOKEN_KEYWORD_CALL:
                 stmt = parse_function_call(parser);
+                // Handle semicolon after function call statement
+                if (parser->current_token.type != TOKEN_SEMICOLON) {
+                    fprintf(stderr, "Expected ';' after function call statement\n");
+                    free_ast(stmt);
+                    exit(EXIT_FAILURE);
+                }
+                advance(parser);  // Consume the semicolon
                 break;
             case TOKEN_KEYWORD_RETURN:
                 stmt = parse_return(parser);

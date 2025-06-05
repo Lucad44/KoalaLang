@@ -71,4 +71,6 @@ void dispatch_string_string_to_string(void *func_ptr, void **args, void *ret_out
 
 void dispatch_string_double_double_to_double(void* fptr, void** args, void* ret_out);
 
+void dispatch_string_double_to_double(void* fptr, void** args, void* ret_out);
+
 #endif

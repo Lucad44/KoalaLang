@@ -1057,16 +1057,6 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
 
         c_func->dispatcher(c_func->func, args, ret_out);
 
-        if (ret_out == NULL) {
-            fprintf(stderr, "\nError: Standard library function %s "
-                            "returned value with unexpected type\n", func_call->name);
-            for (int i = 0; i < c_func->param_count; i++) {
-                free(args[i]);
-            }
-            free(args);
-            exit(EXIT_FAILURE);
-        }
-
         ReturnValue ret_val;
         switch (c_func->ret_type) {
             case TYPE_INT:
