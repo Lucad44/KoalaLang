@@ -65,7 +65,7 @@ void dispatch_string_to_string(void *func_ptr, void **args, void *ret_out);
 
 void dispatch_string_to_void(void *func_ptr, void **args, void *ret_out);
 
-void dispatch_const_char_ptr_array_to_void(void* fptr, void** args, void* ret_out);
+void dispatch_string_array_to_void(void *func_ptr, void **args, void *ret_out);
 
 void dispatch_string_string_to_string(void *func_ptr, void **args, void *ret_out);
 

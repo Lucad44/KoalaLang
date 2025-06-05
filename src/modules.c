@@ -75,7 +75,7 @@ static void __attribute__((constructor)) init_module_map() {
     hashmap_set(math_functions_map, &(FunctionMeta) { .name = "plot_function", .func = (void *) klc_plot_function,
            .dispatcher = dispatch_string_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING}, .param_count = 1});
     hashmap_set(math_functions_map, &(FunctionMeta) { .name = "plot_multiple_functions", .func = (void *) klc_plot_multiple_functions,
-           .dispatcher = dispatch_string_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING_ARRAY}, .param_count = 1});
+           .dispatcher = dispatch_string_array_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING_ARRAY}, .param_count = 1});
     hashmap_set(math_functions_map, &(FunctionMeta) { .name = "plot_2vars_function", .func = (void *) klc_plot_2vars_function,
            .dispatcher = dispatch_string_to_void, .ret_type = TYPE_VOID, .param_types = {TYPE_STRING}, .param_count = 1});
     hashmap_set(math_functions_map, &(FunctionMeta) { .name = "plot_csv", .func = (void *) klc_plot_csv,
@@ -280,11 +280,45 @@ void dispatch_string_to_void(void *func_ptr, void **args, void *ret_out) {
     func(*(const char**) args[0]);
 }
 
-void dispatch_const_char_ptr_array_to_void(void* fptr, void** args, void* ret_out) {
+void dispatch_string_array_to_void(void *func_ptr, void **args, void *ret_out) {
     (void)ret_out;
-    void (*func)(const char*[]) = (void (*)(const char*[]))fptr;
-    const char** exprs = (const char**)args[0];
-    func(exprs);
+    void (*func)(const char **, int) = (void (*)(const char **, int))func_ptr;
+
+    // Extract the VariableValue pointer (evaluated list)
+    VariableValue *list_value = (VariableValue *)args[0];
+    
+
+    // Count elements in the list
+    ListNode *current = list_value->list_val.head;
+    int count = 0;
+    while (current != NULL) {
+        count++;
+        current = current->next;
+    }
+
+    // Allocate array of string pointers
+    const char **arr = malloc(count * sizeof(const char *));
+    if (!arr) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return;
+    }
+
+    // Fill array with string values
+    current = list_value->list_val.head;
+    for (int i = 0; i < count; i++) {
+        if (current->element.type != VAR_STR) {
+            arr[i] = "";
+        } else {
+            arr[i] = current->element.value.str_val;
+        }
+        current = current->next;
+    }
+
+    // Call the C function
+    func(arr, count);
+    
+    // Free temporary array
+    free(arr);
 }
 
 void dispatch_string_string_to_string(void *func_ptr, void **args, void *ret_out) {

@@ -226,8 +226,8 @@ void klc_plot_multiple_functions(const char *input_exprs[], const int count) {
     }
 
     fprintf(gp, "set title 'Multiple Function Plot'\n");
-    fprintf(gp, "set xlabel 'X-axis'\n");
-    fprintf(gp, "set ylabel 'Y-axis'\n");
+    fprintf(gp, "set xlabel 'X'\n");
+    fprintf(gp, "set ylabel 'Y'\n");
 
     fprintf(gp, "plot ");
 

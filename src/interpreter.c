@@ -977,61 +977,87 @@ ReturnValue execute_function_body(const ASTNode *body, struct hashmap *scope, Re
 void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, ReturnContext *caller_ret_ctx) {
     const FunctionMeta *c_func = get_function_meta_from_module(imported_modules, func_call->name, func_call->module_name);
     if (c_func) {
-        // Handle C function calls (existing code remains the same)
         if (func_call->arg_count != c_func->param_count) {
             fprintf(stderr, "\nError: Function %s expects %d arguments, got %d\n",
                     func_call->name, c_func->param_count, func_call->arg_count);
             exit(EXIT_FAILURE);
         }
 
-        void **args = malloc(sizeof(void *) * c_func->param_count);
-        if (!args) {
-            fprintf(stderr, "\nError: Memory allocation failed for arguments in function %s\n", func_call->name);
+        // Allocate array for evaluated arguments
+        ReturnValue *arg_vals = calloc(c_func->param_count, sizeof(ReturnValue));
+        if (!arg_vals) {
+            fprintf(stderr, "\nError: Memory allocation failed for argument values\n");
             exit(EXIT_FAILURE);
         }
 
+        void **args = malloc(sizeof(void *) * c_func->param_count);
+        if (!args) {
+            fprintf(stderr, "\nError: Memory allocation failed for arguments\n");
+            free(arg_vals);
+            exit(EXIT_FAILURE);
+        }
+
+        // Evaluate all arguments first
         for (int i = 0; i < c_func->param_count; i++) {
             ReturnContext arg_eval_ctx = {0};
-            ReturnValue arg_val = evaluate_expression(func_call->arguments[i], scope, &arg_eval_ctx);
+            arg_vals[i] = evaluate_expression(func_call->arguments[i], scope, &arg_eval_ctx);
+            
             if (arg_eval_ctx.is_return) {
                 caller_ret_ctx->is_return = 1;
                 caller_ret_ctx->ret_val = arg_eval_ctx.ret_val;
+                // Clean up partially evaluated arguments
+                for (int j = 0; j <= i; j++) {
+                    free_return_value(arg_vals[j].type, &arg_vals[j]);
+                }
+                free(arg_vals);
                 free(args);
                 return;
             }
+        }
 
+        // Process arguments based on parameter types
+        for (int i = 0; i < c_func->param_count; i++) {
             DataType param_type = c_func->param_types[i];
             switch (param_type) {
                 case TYPE_DOUBLE:
-                    if (arg_val.type != RET_NUM) {
+                    if (arg_vals[i].type != RET_NUM) {
                         fprintf(stderr, "\nError: Argument %d to %s must be a number\n", i + 1, func_call->name);
-                        free_return_value(arg_val.type, &arg_val);
-                        free(args);
-                        exit(EXIT_FAILURE);
+                        goto cleanup_and_exit;
                     }
                     args[i] = malloc(sizeof(double));
-                    *(double *)args[i] = arg_val.value.num_val;
+                    *(double *)args[i] = arg_vals[i].value.num_val;
                     break;
+                    
                 case TYPE_STRING:
-                    if (arg_val.type != RET_STR) {
+                    if (arg_vals[i].type != RET_STR) {
                         fprintf(stderr, "\nError: Argument %d to %s must be a string\n", i + 1, func_call->name);
-                        free_return_value(arg_val.type, &arg_val);
-                        free(args);
-                        exit(EXIT_FAILURE);
+                        goto cleanup_and_exit;
                     }
                     args[i] = malloc(sizeof(char *));
-                    *(char **)args[i] = strdup(arg_val.value.str_val);
+                    *(char **)args[i] = strdup(arg_vals[i].value.str_val);
                     break;
+                    
+                case TYPE_STRING_ARRAY:
+                    if (arg_vals[i].type != RET_LIST) {
+                        fprintf(stderr, "\nError: Argument %d to %s must be a list\n", i + 1, func_call->name);
+                        goto cleanup_and_exit;
+                    }
+                    if (arg_vals[i].value.list_val.element_type != VAR_STR) {
+                        fprintf(stderr, "\nError: Argument %d to %s must be a list of strings\n", i + 1, func_call->name);
+                        goto cleanup_and_exit;
+                    }
+                    // Store pointer to VariableValue (list data)
+                    args[i] = &arg_vals[i].value;
+                    break;
+                    
                 default:
                     fprintf(stderr, "\nError: Unsupported parameter type %d in native function %s\n",
                             param_type, func_call->name);
-                    free_return_value(arg_val.type, &arg_val);
-                    free(args);
-                    exit(EXIT_FAILURE);
+                    goto cleanup_and_exit;
             }
-            free_return_value(arg_val.type, &arg_val);
         }
 
+        // Prepare return value storage
         void *ret_out = NULL;
         switch (c_func->ret_type) {
             case TYPE_INT:
@@ -1048,28 +1074,26 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
             default:
                 fprintf(stderr, "\nError: Unsupported return type %d for native function %s\n",
                         c_func->ret_type, func_call->name);
-                for (int i = 0; i < c_func->param_count; i++) {
-                    free(args[i]);
-                }
-                free(args);
-                exit(EXIT_FAILURE);
+                goto cleanup_args;
         }
 
+        // Call the dispatcher
         c_func->dispatcher(c_func->func, args, ret_out);
 
+        // Process return value
         ReturnValue ret_val;
         switch (c_func->ret_type) {
             case TYPE_INT:
                 ret_val.type = RET_NUM;
-                ret_val.value.num_val = *(int *) ret_out;
+                ret_val.value.num_val = *(int *)ret_out;
                 break;
             case TYPE_DOUBLE:
                 ret_val.type = RET_NUM;
-                ret_val.value.num_val = *(double *) ret_out;
+                ret_val.value.num_val = *(double *)ret_out;
                 break;
             case TYPE_STRING:
                 ret_val.type = RET_STR;
-                ret_val.value.str_val = strdup(*(char **) ret_out);
+                ret_val.value.str_val = strdup(*(char **)ret_out);
                 free(*(char **)ret_out);
                 break;
             case TYPE_VOID:
@@ -1078,21 +1102,64 @@ void execute_func_call(const FuncCallNode *func_call, struct hashmap *scope, Ret
             default:
                 fprintf(stderr, "\nError: Unsupported return type %d for native function %s\n",
                         c_func->ret_type, func_call->name);
-                exit(EXIT_FAILURE);
+                goto cleanup_ret_out;
         }
 
+        // Clean up arguments
         for (int i = 0; i < c_func->param_count; i++) {
             if (c_func->param_types[i] == TYPE_STRING) {
-                free(*(char **)args[i]);
+                free(*(char **)args[i]); // Free duplicated string
+                free(args[i]);            // Free string pointer container
+            } 
+            else if (c_func->param_types[i] == TYPE_DOUBLE) {
+                free(args[i]); // Free double container
             }
-            free(args[i]);
+            // For TYPE_STRING_ARRAY, no additional cleanup needed here
         }
-        free(args);
+        
+        // Clean up return value containers
         free(ret_out);
+        free(args);
+        
+        // Clean up argument values (including lists)
+        for (int i = 0; i < c_func->param_count; i++) {
+            free_return_value(arg_vals[i].type, &arg_vals[i]);
+        }
+        free(arg_vals);
 
         caller_ret_ctx->is_return = 1;
         caller_ret_ctx->ret_val = ret_val;
         return;
+
+        // Error handling labels
+        cleanup_and_exit:
+            for (int j = 0; j < c_func->param_count; j++) {
+                free_return_value(arg_vals[j].type, &arg_vals[j]);
+            }
+            free(arg_vals);
+            free(args);
+            exit(EXIT_FAILURE);
+
+        cleanup_args:
+            for (int i = 0; i < c_func->param_count; i++) {
+                if (c_func->param_types[i] == TYPE_STRING) {
+                    free(*(char **)args[i]);
+                    free(args[i]);
+                } 
+                else if (c_func->param_types[i] == TYPE_DOUBLE) {
+                    free(args[i]);
+                }
+            }
+            // Fall through to next cleanup
+
+        cleanup_ret_out:
+            if (ret_out) free(ret_out);
+            free(args);
+            for (int i = 0; i < c_func->param_count; i++) {
+                free_return_value(arg_vals[i].type, &arg_vals[i]);
+            }
+            free(arg_vals);
+            exit(EXIT_FAILURE);
     }
 
     // Handle user-defined function calls
