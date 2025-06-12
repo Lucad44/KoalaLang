@@ -3,11 +3,11 @@
 #define PI 3.1415926535897932384626433
 
 double klc_degrees_to_radians(const double n) {
-    return n * PI / 180;
+    return n *PI / 180;
 }
 
 double klc_radians_to_degrees(const double n) {
-    return n * 180 / PI;
+    return n *180 / PI;
 }
 
 double klc_sin(const double n) {
@@ -143,7 +143,7 @@ double klc_arcsech(const double n) {
 }
 
 double klc_arccsch(const double n) {
-    if (n > -1 && n < 1)  {
+    if (n > -1 && n < 1) {
         fprintf(stderr, "\nError: arccsch argument must be in the range (-inf,-1]U[1,+inf).\n");
         exit(EXIT_FAILURE);
     }

@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-
 #include "lexer.h"
 #include "memory.h"
 
-void init_lexer(Lexer *lexer, const char *source) {
+void init_lexer(Lexer *lexer,
+    const char *source) {
     lexer->source = source;
     lexer->current_pos = 0;
 }
@@ -22,7 +22,13 @@ Token next_token(Lexer *lexer) {
     const char current = lexer->source[lexer->current_pos];
 
     if (current == '\0') {
-        return (Token) {TOKEN_EOF, NULL, 0, NULL, NULL};
+        return (Token) {
+            TOKEN_EOF,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
     }
 
     if (isalpha(current)) {
@@ -52,14 +58,26 @@ Token next_token(Lexer *lexer) {
         else if (strcmp(lexeme, "return") == 0) type = TOKEN_KEYWORD_RETURN;
         else if (strcmp(lexeme, "import") == 0) type = TOKEN_KEYWORD_IMPORT;
 
-        return (Token) {type, lexeme, 0, NULL, NULL};
+        return (Token) {
+            type,
+            lexeme,
+            0,
+            NULL,
+            NULL
+        };
     }
 
-    if (isdigit(current) || (current == '.' && isdigit(lexer->source[lexer->current_pos + 1]))) { // Improved number parsing
+    if (isdigit(current) || (current == '.' && isdigit(lexer->source[lexer->current_pos + 1]))) {
         char *end;
-        const double num = strtod(&lexer->source[lexer->current_pos], &end);
+        const double num = strtod( &lexer->source[lexer->current_pos], &end);
         lexer->current_pos = end - lexer->source;
-        return (Token) {TOKEN_NUMBER, NULL, num, NULL, NULL};
+        return (Token) {
+            TOKEN_NUMBER,
+            NULL,
+            num,
+            NULL,
+            NULL
+        };
     }
 
     if (current == '"') {
@@ -77,118 +95,316 @@ Token next_token(Lexer *lexer) {
         strncpy(str, &lexer->source[start], length);
         str[length] = '\0';
         lexer->current_pos++;
-        return (Token) {TOKEN_STRING, NULL, 0, str, NULL};
+        return (Token) {
+            TOKEN_STRING,
+            NULL,
+            0,
+            str,
+            NULL
+        };
     }
 
     switch (current) {
-        case '$':
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_CONCAT, NULL, 0, NULL, NULL};
-        case '=':
-            if (lexer->source[lexer->current_pos + 1] == '=') {
-                lexer->current_pos += 2;
-                return (Token) {TOKEN_OPERATOR_EQUAL, NULL, 0, NULL, NULL}; // Keep for comparison ==
-            }
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_EQUAL, NULL, 0, NULL, NULL}; // Keep for assignment =
-        case '<':
-            if (lexer->source[lexer->current_pos + 1] == '=') {
-                lexer->current_pos += 2;
-                return (Token) {TOKEN_OPERATOR_LESS_EQUAL, NULL, 0, NULL, NULL};
-            }
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_LESS, NULL, 0, NULL, NULL};
-        case '>':
-            if (lexer->source[lexer->current_pos + 1] == '=') {
-                lexer->current_pos += 2;
-                return (Token) {TOKEN_OPERATOR_GREATER_EQUAL, NULL, 0, NULL, NULL};
-            }
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_GREATER, NULL, 0, NULL, NULL};
-        case '!':
-            if (lexer->source[lexer->current_pos + 1] == '=') {
-                lexer->current_pos += 2;
-                return (Token) {TOKEN_OPERATOR_NOT_EQUAL, NULL, 0, NULL, NULL};
-            }
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_NOT, NULL, 0, NULL, NULL};
-        case '+':
-            if (lexer->source[lexer->current_pos + 1] == '+') {
-                lexer->current_pos += 2;
-                return (Token) {TOKEN_OPERATOR_PLUS_PLUS, NULL, 0, NULL, NULL};
-            }
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_PLUS, NULL, 0, NULL, NULL};
-        case '-':
-            if (lexer->source[lexer->current_pos + 1] == '-') {
-                lexer->current_pos += 2;
-                return (Token) {TOKEN_OPERATOR_MINUS_MINUS, NULL, 0, NULL, NULL};
-            }
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_MINUS, NULL, 0, NULL, NULL};
-        case '*':
-            if (lexer->source[lexer->current_pos + 1] == '*') {
-                lexer->current_pos += 2;
-                return (Token) {TOKEN_OPERATOR_POWER, NULL, 0, NULL, NULL};
-            }
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_MULTIPLY, NULL, 0, NULL, NULL};
-        case '/':
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_DIVIDE, NULL, 0, NULL, NULL};
-        case '%':
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_MODULO, NULL, 0, NULL, NULL};
-        case '&':
-            if (lexer->source[lexer->current_pos + 1] == '&') {
-                lexer->current_pos += 2;
-                return (Token) {TOKEN_OPERATOR_LOGICAL_AND, NULL, 0, NULL, NULL};
-            }
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_BITWISE_AND, NULL, 0, NULL, NULL};
-        case '|':
-            if (lexer->source[lexer->current_pos + 1] == '|') {
-                lexer->current_pos += 2;
-                return (Token) {TOKEN_OPERATOR_LOGICAL_OR, NULL, 0, NULL, NULL};
-            }
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_BITWISE_OR, NULL, 0, NULL, NULL};
-        case '^':
-            if (lexer->source[lexer->current_pos + 1] == '^') {
-                lexer->current_pos += 2;
-                return (Token) {TOKEN_OPERATOR_LOGICAL_XOR, NULL, 0, NULL, NULL};
-            }
-            lexer->current_pos++;
-            return (Token) {TOKEN_OPERATOR_BITWISE_XOR, NULL, 0, NULL, NULL};
-        case '(':
-            lexer->current_pos++;
-            return (Token) {TOKEN_LPAREN, NULL, 0, NULL, NULL};
-        case ')':
-            lexer->current_pos++;
-            return (Token) {TOKEN_RPAREN, NULL, 0, NULL, NULL};
-        case '{':
-            lexer->current_pos++;
-            return (Token) {TOKEN_LBRACE, NULL, 0, NULL, NULL};
-        case '}':
-            lexer->current_pos++;
-            return (Token) {TOKEN_RBRACE, NULL, 0, NULL, NULL};
-        case '[':
-            lexer->current_pos++;
-            return (Token) {TOKEN_LBRACKET, NULL, 0, NULL, NULL};
-        case ']':
-            lexer->current_pos++;
-            return (Token) {TOKEN_RBRACKET, NULL, 0, NULL, NULL};
-        case ';':
-            lexer->current_pos++;
-            return (Token) {TOKEN_SEMICOLON, NULL, 0, NULL, NULL};
-        case ',':
-            lexer->current_pos++;
-            return (Token) {TOKEN_COMMA, NULL, 0, NULL, NULL};
-        case '.':
-            lexer->current_pos++;
-            return (Token) { TOKEN_DOT, NULL, 0, NULL, NULL};
-        default:
-            fprintf(stderr, "\nError: Unexpected character '%c' (ASCII %d)\n", current, current);
-            exit(EXIT_FAILURE);
+    case '$':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_CONCAT,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '=':
+        if (lexer->source[lexer->current_pos + 1] == '=') {
+            lexer->current_pos += 2;
+            return (Token) {
+                TOKEN_OPERATOR_EQUAL,
+                NULL,
+                0,
+                NULL,
+                NULL
+            };
+        }
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_EQUAL,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '<':
+        if (lexer->source[lexer->current_pos + 1] == '=') {
+            lexer->current_pos += 2;
+            return (Token) {
+                TOKEN_OPERATOR_LESS_EQUAL,
+                NULL,
+                0,
+                NULL,
+                NULL
+            };
+        }
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_LESS,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '>':
+        if (lexer->source[lexer->current_pos + 1] == '=') {
+            lexer->current_pos += 2;
+            return (Token) {
+                TOKEN_OPERATOR_GREATER_EQUAL,
+                NULL,
+                0,
+                NULL,
+                NULL
+            };
+        }
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_GREATER,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '!':
+        if (lexer->source[lexer->current_pos + 1] == '=') {
+            lexer->current_pos += 2;
+            return (Token) {
+                TOKEN_OPERATOR_NOT_EQUAL,
+                NULL,
+                0,
+                NULL,
+                NULL
+            };
+        }
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_NOT,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '+':
+        if (lexer->source[lexer->current_pos + 1] == '+') {
+            lexer->current_pos += 2;
+            return (Token) {
+                TOKEN_OPERATOR_PLUS_PLUS,
+                NULL,
+                0,
+                NULL,
+                NULL
+            };
+        }
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_PLUS,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '-':
+        if (lexer->source[lexer->current_pos + 1] == '-') {
+            lexer->current_pos += 2;
+            return (Token) {
+                TOKEN_OPERATOR_MINUS_MINUS,
+                NULL,
+                0,
+                NULL,
+                NULL
+            };
+        }
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_MINUS,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '*':
+        if (lexer->source[lexer->current_pos + 1] == '*') {
+            lexer->current_pos += 2;
+            return (Token) {
+                TOKEN_OPERATOR_POWER,
+                NULL,
+                0,
+                NULL,
+                NULL
+            };
+        }
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_MULTIPLY,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '/':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_DIVIDE,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '%':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_MODULO,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '&':
+        if (lexer->source[lexer->current_pos + 1] == '&') {
+            lexer->current_pos += 2;
+            return (Token) {
+                TOKEN_OPERATOR_LOGICAL_AND,
+                NULL,
+                0,
+                NULL,
+                NULL
+            };
+        }
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_BITWISE_AND,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '|':
+        if (lexer->source[lexer->current_pos + 1] == '|') {
+            lexer->current_pos += 2;
+            return (Token) {
+                TOKEN_OPERATOR_LOGICAL_OR,
+                NULL,
+                0,
+                NULL,
+                NULL
+            };
+        }
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_BITWISE_OR,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '^':
+        if (lexer->source[lexer->current_pos + 1] == '^') {
+            lexer->current_pos += 2;
+            return (Token) {
+                TOKEN_OPERATOR_LOGICAL_XOR,
+                NULL,
+                0,
+                NULL,
+                NULL
+            };
+        }
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_OPERATOR_BITWISE_XOR,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '(':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_LPAREN,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case ')':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_RPAREN,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '{':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_LBRACE,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '}':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_RBRACE,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '[':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_LBRACKET,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case ']':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_RBRACKET,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case ';':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_SEMICOLON,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case ',':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_COMMA,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    case '.':
+        lexer->current_pos++;
+        return (Token) {
+            TOKEN_DOT,
+            NULL,
+            0,
+            NULL,
+            NULL
+        };
+    default:
+        fprintf(stderr, "\nError: Unexpected character '%c' (ASCII %d)\n", current, current);
+        exit(EXIT_FAILURE);
     }
 }

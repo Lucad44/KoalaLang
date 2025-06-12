@@ -1,11 +1,19 @@
 #include "klc_math.h"
-
+#include <gmp.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <symengine/cwrapper.h>
 #include <symengine/symengine_exception.h>
 
-#define EPSILON 0.00000000000000001
-#define PI 3.1415926535897932384626433
-#define E 2.718281828459045235360287471
+
+#define EPSILON 1e-9
+#define MAX_ROOTS 100
+#define TOLERANCE 1e-9
+#define INT_TOLERANCE 1e-9
+#define MAX_ITERATIONS 10000
+#define SEARCH_MIN - 1000.0
+#define SEARCH_MAX 1000.0
+#define SEARCH_STEP 0.1
 
 int klc_is_positive(const double n) {
     return n > 0;
@@ -110,7 +118,7 @@ double klc_cbrt(const double n) {
 
     do {
         prev_guess = guess;
-        guess = (2.0 * guess + n / (guess * guess)) / 3.0;
+        guess = (2.0 *guess + n / (guess *guess)) / 3.0;
     } while ((prev_guess - guess > EPSILON) || (guess - prev_guess > EPSILON));
 
     return guess;
@@ -192,7 +200,8 @@ double klc_log2(const double n) {
     return log(n) / log(2);
 }
 
-double klc_log(const double n, const double base) {
+double klc_log(const double n,
+    const double base) {
     if (n <= 0) {
         fprintf(stderr, "\nError: log not defined for negative or zero numbers.\n");
         exit(EXIT_FAILURE);
@@ -218,7 +227,8 @@ void klc_plot_function(const char *input_expr) {
     fclose(gp);
 }
 
-void klc_plot_multiple_functions(const char *input_exprs[], const int count) {
+void klc_plot_multiple_functions(const char *input_exprs[],
+    const int count) {
     FILE *gp = popen("gnuplot -persistent", "w");
     if (gp == NULL) {
         fprintf(stderr, "Error: gnuplot not found.\n");
@@ -251,7 +261,6 @@ void klc_plot_2vars_function(const char *input_expr) {
         exit(EXIT_FAILURE);
     }
 
-    // Gnuplot setup
     fprintf(gnuplot, "set title '3D Plot: %s'\n", input_expr);
     fprintf(gnuplot, "set xlabel 'X'\n");
     fprintf(gnuplot, "set ylabel 'Y'\n");
@@ -260,14 +269,12 @@ void klc_plot_2vars_function(const char *input_expr) {
     fprintf(gnuplot, "set yrange [-10:10]\n");
     fprintf(gnuplot, "set zrange [-1:1]\n");
     fprintf(gnuplot, "set hidden3d\n");
-    fprintf(gnuplot, "set isosamples 60,60\n");  // Higher resolution
+    fprintf(gnuplot, "set isosamples 60,60\n");
 
-    // Plot the input expression directly
     fprintf(gnuplot, "splot %s with lines title ''\n", input_expr);
 
     fflush(gnuplot);
-    // Optionally: keep gnuplot open after exit
-    // pclose(gnuplot); // Uncomment if you want to close it automatically
+
 }
 
 void klc_plot_csv(const char *csv_path) {
@@ -277,7 +284,6 @@ void klc_plot_csv(const char *csv_path) {
         return;
     }
 
-    // Read first line (header)
     char line[4096];
     if (!fgets(line, sizeof(line), file)) {
         fprintf(stderr, "Error: Failed to read CSV file.\n");
@@ -286,12 +292,11 @@ void klc_plot_csv(const char *csv_path) {
     }
     fclose(file);
 
-    // Parse header names
     char *headers[128];
     int num_columns = 0;
     char *token = strtok(line, ",\n\r");
     while (token && num_columns < 128) {
-        headers[num_columns] = strdup(token);  // Copy token
+        headers[num_columns] = strdup(token);
         num_columns++;
         token = strtok(NULL, ",\n\r");
     }
@@ -307,7 +312,6 @@ void klc_plot_csv(const char *csv_path) {
         return;
     }
 
-    // Gnuplot setup
     fprintf(gnuplot, "set datafile separator ','\n");
     fprintf(gnuplot, "set title 'CSV Plot: %s'\n", csv_path);
     fprintf(gnuplot, "set xlabel '%s'\n", headers[0]);
@@ -315,7 +319,6 @@ void klc_plot_csv(const char *csv_path) {
     fprintf(gnuplot, "set key outside\n");
     fprintf(gnuplot, "set grid\n");
 
-    // Begin plot command
     fprintf(gnuplot, "plot ");
 
     for (int col = 1; col < num_columns; col++) {
@@ -327,7 +330,6 @@ void klc_plot_csv(const char *csv_path) {
 
     fflush(gnuplot);
 
-    // Free allocated header names
     for (int i = 0; i < num_columns; i++) {
         free(headers[i]);
     }
@@ -337,105 +339,96 @@ char *klc_simplify_expression(const char *input_expr) {
     if (!input_expr) {
         return NULL;
     }
-    
-    // Create basic objects
+
     basic expr, expanded;
     basic_new_stack(expr);
     basic_new_stack(expanded);
-    
+
     char *result_str = NULL;
-    
-    // Parse the input expression
+
     if (basic_parse(expr, input_expr) != SYMENGINE_NO_EXCEPTION) {
         fprintf(stderr, "Error: Failed to parse expression: %s\n", input_expr);
         goto cleanup;
     }
-    
-    // Expand the expression using basic_expand
+
     basic_expand(expanded, expr);
-    
-    // Convert the expanded expression back to string
+
     char *temp_str = basic_str(expanded);
     if (!temp_str) {
         fprintf(stderr, "Error: Failed to convert expanded expression to string\n");
         goto cleanup;
     }
-    
-    // Allocate memory for the result and copy the string
+
     size_t len = strlen(temp_str);
-    result_str = (char*)malloc(len + 1);
+    result_str = (char *) malloc(len + 1);
     if (result_str) {
         strcpy(result_str, temp_str);
     }
-    
-    // Free the temporary string
+
     basic_str_free(temp_str);
-    
-cleanup:
-    // Free the basic objects
-    basic_free_stack(expr);
+
+    cleanup:
+
+        basic_free_stack(expr);
     basic_free_stack(expanded);
-    
+
     return result_str;
 }
 
-char *klc_differentiate(const char *input_expr, const char *variable) {
+char *klc_differentiate(const char *input_expr,
+    const char *variable) {
     if (!input_expr || !variable) {
         return NULL;
     }
-    
-    // Create basic objects
-    basic expr, var, result;
+
+    basic expr,
+    var, result;
     basic_new_stack(expr);
     basic_new_stack(var);
     basic_new_stack(result);
-    
+
     char *result_str = NULL;
-    
-    // Parse the input expression
+
     if (basic_parse(expr, input_expr) != SYMENGINE_NO_EXCEPTION) {
         fprintf(stderr, "Error: Failed to parse expression: %s\n", input_expr);
         goto cleanup;
     }
-    
-    // Create the variable symbol
+
     symbol_set(var, variable);
-    
-    // Calculate the derivative (this function exists in SymEngine C wrapper)
-    basic_diff(result, expr, var);
-    
-    // Convert the result back to string
+
+    basic_diff(result, expr,
+        var);
+
     char *temp_str = basic_str(result);
     if (!temp_str) {
         fprintf(stderr, "Error: Failed to convert result to string\n");
         goto cleanup;
     }
-    
-    // Allocate memory for the result and copy the string
+
     size_t len = strlen(temp_str);
-    result_str = (char*)malloc(len + 1);
+    result_str = (char *) malloc(len + 1);
     if (result_str) {
         strcpy(result_str, temp_str);
     }
-    
-    // Free the temporary string
+
     basic_str_free(temp_str);
-    
-cleanup:
-    // Free the basic objects
-    basic_free_stack(expr);
+
+    cleanup:
+
+        basic_free_stack(expr);
     basic_free_stack(var);
     basic_free_stack(result);
-    
+
     return result_str;
 }
 
-char *klc_integrate(const char *input_expr, const char *variable) {
-   /* if (!input_expr || !variable) {
+char *klc_integrate(const char *input_expr,
+    const char *variable) {
+    /*if (!input_expr || !variable) {
         return NULL;
     }
     
-    // Create basic objects
+    
     basic expr, var, result;
     basic_new_stack(expr);
     basic_new_stack(var);
@@ -443,59 +436,57 @@ char *klc_integrate(const char *input_expr, const char *variable) {
     
     char *result_str = NULL;
     
-    // Parse the input expression
+    
     if (basic_parse(expr, input_expr) != SYMENGINE_NO_EXCEPTION) {
         fprintf(stderr, "Error: Failed to parse expression: %s\n", input_expr);
         goto cleanup;
     }
     
-    // Create the variable symbol
+    
     symbol_set(var, variable);
     
-    // Calculate the indefinite integral
+    
     if (basic_(result, expr, var) != SYMENGINE_NO_EXCEPTION) {
         fprintf(stderr, "Error: Failed to integrate expression\n");
         goto cleanup;
     }
     
-    // Convert the result back to string
+    
     char *temp_str = basic_str(result);
     if (!temp_str) {
         fprintf(stderr, "Error: Failed to convert result to string\n");
         goto cleanup;
     }
     
-    // Allocate memory for the result and copy the string
+    
     size_t len = strlen(temp_str);
-    result_str = (char*)malloc(len + 1);
+    result_str = (char *)malloc(len + 1);
     if (result_str) {
         strcpy(result_str, temp_str);
     }
     
-    // Free the temporary string
+    
     basic_str_free(temp_str);
     
 cleanup:
-    // Free the basic objects
+    
     basic_free_stack(expr);
     basic_free_stack(var);
     basic_free_stack(result);
     
-    return result_str;*/
+    return result_str; */
     return "TODO";
 }
 
-double klc_evaluate_function(const char* expr_str, double x) {
-    // Initialize SymEngine basic variables
+double klc_evaluate_function(const char *expr_str, double x) {
+
     basic expr, x_var, x_val, result;
-    
-    // Initialize the basic variables
+
     basic_new_stack(expr);
     basic_new_stack(x_var);
     basic_new_stack(x_val);
     basic_new_stack(result);
-    
-    // Parse the expression string
+
     if (basic_parse(expr, expr_str) != SYMENGINE_NO_EXCEPTION) {
         fprintf(stderr, "Error parsing expression: %s\n", expr_str);
         basic_free_stack(expr);
@@ -504,116 +495,267 @@ double klc_evaluate_function(const char* expr_str, double x) {
         basic_free_stack(result);
         return 0.0;
     }
-    
-    // Create symbol 'x'
+
     symbol_set(x_var, "x");
-    
-    // Create the numeric value for substitution
+
     real_double_set_d(x_val, x);
-    
-    // Substitute x with the given value using basic_subs2
+
     basic_subs2(result, expr, x_var, x_val);
-    
-    // Convert result to double
+
     double output = real_double_get_d(result);
-    
-    // Clean up
+
     basic_free_stack(expr);
     basic_free_stack(x_var);
     basic_free_stack(x_val);
     basic_free_stack(result);
-    
+
     return output;
 }
 
+char *klc_subtract_expressions(const char *a,
+    const char *b) {
+    basic_struct *expr_a, *expr_b, *result;
+
+    expr_a = basic_new_heap();
+    expr_b = basic_new_heap();
+    result = basic_new_heap();
+
+    if (basic_parse(expr_a, a) != 0) {
+        fprintf(stderr, "Error parsing expression a: %s\n", a);
+        basic_free_heap(expr_a);
+        basic_free_heap(expr_b);
+        basic_free_heap(result);
+        return NULL;
+    }
+
+    if (basic_parse(expr_b, b) != 0) {
+        fprintf(stderr, "Error parsing expression b: %s\n", b);
+        basic_free_heap(expr_a);
+        basic_free_heap(expr_b);
+        basic_free_heap(result);
+        return NULL;
+    }
+
+    basic_sub(result, expr_a, expr_b);
+
+    basic_struct *simplified = basic_new_heap();
+    basic_expand(simplified, result);
+    basic_free_heap(result);
+    result = simplified;
+
+    char *result_str = basic_str(result);
+
+    char *return_str = malloc(strlen(result_str) + 1);
+    strcpy(return_str, result_str);
+
+    basic_str_free(result_str);
+    basic_free_heap(expr_a);
+    basic_free_heap(expr_b);
+    basic_free_heap(result);
+
+    return return_str;
+}
+
 double integrate_simpson(const char *func, double a, double b, int n) {
-    // n must be even for Simpson's rule
+
     if (n % 2 != 0) n++;
-    
+
     double h = (b - a) / n;
     double sum = klc_evaluate_function(func, a) + klc_evaluate_function(func, b);
-    
-    // Add terms with alternating coefficients 4 and 2
+
     for (int i = 1; i < n; i++) {
-        double x = a + i * h;
+        double x = a + i *h;
         if (i % 2 == 1) {
-            sum += 4 * klc_evaluate_function(func, x);  // Odd indices get coefficient 4
+            sum += 4 *klc_evaluate_function(func, x);
         } else {
-            sum += 2 * klc_evaluate_function(func, x);  // Even indices get coefficient 2
+            sum += 2 *klc_evaluate_function(func, x);
         }
     }
-    
-    return sum * h / 3.0;
+
+    return sum *h / 3.0;
+}
+
+double bisection_solve(const char *expr, double a, double b, int *success) {
+    double fa = klc_evaluate_function(expr, a);
+    double fb = klc_evaluate_function(expr, b);
+
+    if (fa *fb > 0) {
+        *success = 0;
+        return 0.0;
+    }
+
+    double c, fc;
+    int iterations = 0;
+
+    while (fabs(b - a) > TOLERANCE && iterations < MAX_ITERATIONS) {
+        c = (a + b) / 2.0;
+        fc = klc_evaluate_function(expr, c);
+
+        if (fabs(fc) < TOLERANCE) {
+            *success = 1;
+            return c;
+        }
+
+        if (fa *fc < 0) {
+            b = c;
+            fb = fc;
+        } else {
+            a = c;
+            fa = fc;
+        }
+
+        iterations++;
+    }
+
+    *success = 1;
+    return (a + b) / 2.0;
+}
+
+int is_duplicate_root(double *roots, int count, double new_root) {
+    for (int i = 0; i < count; i++) {
+        if (fabs(roots[i] - new_root) < TOLERANCE *10) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 double klc_definite_integral(const char *input_expr, double a, double b) {
     return integrate_simpson(input_expr, a, b, 1000);
 }
 
-char *klc_polynomial_division(const char *dividend_expr, const char *divisor_expr) {
-  /* // Initialize SymEngine symbols and basic objects
-    basic dividend, divisor, x, quotient, remainder;
-    basic_new_stack(dividend);
-    basic_new_stack(divisor);
-    basic_new_stack(x);
-    basic_new_stack(quotient);
-    basic_new_stack(remainder);
-    
-    // Create symbol 'x'
-    symbol_set(x, "x");
-    
-    // Parse dividend expression
-    if (basic_parse(dividend, dividend_expr) != 0) {
-        return NULL;
-    }
-    
-    // Parse divisor expression
-    if (basic_parse(divisor, divisor_expr) != 0) {
-        basic_free_stack(dividend);
+char *klc_polynomial_division(const char *dividend_expr,
+    const char *divisor_expr) {
+    basic_struct *expr_a, *expr_b, *result;
+
+    expr_a = basic_new_heap();
+    expr_b = basic_new_heap();
+    result = basic_new_heap();
+
+    if (basic_parse(expr_a, dividend_expr) != 0) {
+        fprintf(stderr, "Error parsing expression a: %s\n", dividend_expr);
+        basic_free_heap(expr_a);
+        basic_free_heap(expr_b);
+        basic_free_heap(result);
         return NULL;
     }
 
-    
-    
-    // Perform polynomial division
-    int result = symengine_pdiv(dividend, divisor, x, quotient, remainder);
-    if (result != 0) {
-        basic_free_stack(dividend);
-        basic_free_stack(divisor);
-        basic_free_stack(x);
-        basic_free_stack(quotient);
-        basic_free_stack(remainder);
+    if (basic_parse(expr_b, divisor_expr) != 0) {
+        fprintf(stderr, "Error parsing expression b: %s\n", divisor_expr);
+        basic_free_heap(expr_a);
+        basic_free_heap(expr_b);
+        basic_free_heap(result);
         return NULL;
     }
-    
-    // Convert quotient and remainder to strings
-    char *q_str = basic_str(quotient);
-    char *r_str = basic_str(remainder);
-    
-    // Format result as "(quotient)(remainder)"
-    size_t len = strlen(q_str) + strlen(r_str) + 3; // +3 for "()" and null terminator
-    char *output = malloc(len);
-    if (output == NULL) {
-        free(q_str);
-        free(r_str);
-        basic_free_stack(dividend);
-        basic_free_stack(divisor);
-        basic_free_stack(x);
-        basic_free_stack(quotient);
-        basic_free_stack(remainder);
-        return NULL;
+
+    basic_div(result, expr_a, expr_b);
+
+    basic_struct *simplified = basic_new_heap();
+    basic_expand(simplified, result);
+    basic_free_heap(result);
+    result = simplified;
+
+    char *result_str = basic_str(result);
+
+    char *return_str = malloc(strlen(result_str) + 1);
+    strcpy(return_str, result_str);
+
+    basic_str_free(result_str);
+    basic_free_heap(expr_a);
+    basic_free_heap(expr_b);
+    basic_free_heap(result);
+
+    return return_str;
+}
+
+double klc_limit(const char *input_expr, double limit_point) {
+    return klc_evaluate_function(input_expr, limit_point);
+}
+
+void split_equation(const char *equation, char **left, char **right) {
+    const char *eq_pos = strchr(equation, '=');
+    if (eq_pos) {
+        size_t left_len = eq_pos - equation;
+        *left = (char *) malloc(left_len + 1);
+        strncpy( *left, equation, left_len);
+        ( *left)[left_len] = '\0';
+
+        *right = strdup(eq_pos + 1);
+    } else {
+        *left = strdup(equation);
+        *right = NULL;
     }
-    snprintf(output, len, "(%s)(%s)", q_str, r_str);
-    
-    // Clean up
-    free(q_str);
-    free(r_str);
-    basic_free_stack(dividend);
-    basic_free_stack(divisor);
-    basic_free_stack(x);
-    basic_free_stack(quotient);
-    basic_free_stack(remainder);
-    
-    return output;*/
-    return "tidi";
+}
+
+double snap_to_integer(double x) {
+    double r = round(x);
+    if (fabs(x - r) < INT_TOLERANCE) {
+        return r;
+    }
+    return x;
+}
+
+double *klc_solve_equation(const char *input_expr) {
+    if (!input_expr) return NULL;
+
+    char *left = NULL;
+    char *right = NULL;
+    split_equation(input_expr, &left, &right);
+    if (right)
+        input_expr = klc_subtract_expressions(left, right);
+
+    double *roots = malloc((MAX_ROOTS + 1) *sizeof *roots);
+    if (!roots) return NULL;
+
+    int root_count = 0;
+    double x = SEARCH_MIN;
+
+    while (x < SEARCH_MAX && root_count < MAX_ROOTS) {
+        double x2 = x + SEARCH_STEP;
+        double f1 = klc_evaluate_function(input_expr, x);
+        double f2 = klc_evaluate_function(input_expr, x2);
+
+        if (isnan(f1) || isinf(f1) ||
+            isnan(f2) || isinf(f2)) {
+            x = x2;
+            continue;
+        }
+
+        /*bracket if sign-change or endpoint zero */
+        if (f1 *f2 <= 0.0) {
+            /*if f1 ≈ 0, snap x */
+            if (fabs(f1) < TOLERANCE) {
+                double r = snap_to_integer(x);
+                if (!is_duplicate_root(roots, root_count, r)) {
+                    roots[root_count++] = r;
+                }
+                x = x2;
+                continue;
+            }
+            /*if f2 ≈ 0, snap x2 */
+            if (fabs(f2) < TOLERANCE) {
+                double r = snap_to_integer(x2);
+                if (!is_duplicate_root(roots, root_count, r)) {
+                    roots[root_count++] = r;
+                }
+                x = x2;
+                continue;
+            }
+
+            /*true sign-change → bisect */
+            int success = 0;
+            double root = bisection_solve(input_expr, x, x2, &success);
+            if (success) {
+                root = snap_to_integer(root);
+                if (!is_duplicate_root(roots, root_count, root)) {
+                    roots[root_count++] = root;
+                }
+            }
+        }
+
+        x = x2;
+    }
+
+    roots[root_count] = NAN; /*sentinel */
+    return roots;
 }

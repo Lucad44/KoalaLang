@@ -11,6 +11,7 @@ typedef enum {
     TYPE_DOUBLE,
     TYPE_STRING,
     TYPE_STRING_ARRAY,
+    TYPE_DOUBLE_ARRAY,
     TYPE_VOID
 } DataType;
 
@@ -45,11 +46,11 @@ uint64_t function_meta_hash(const void *item, uint64_t seed0, uint64_t seed1);
 
 bool module_iter(const void *item, void *udata);
 
-const FunctionMeta *get_function_meta_from_module(struct hashmap *map, const char* func_name, char *module_name);
+const FunctionMeta *get_function_meta_from_module(struct hashmap *map, const char *func_name, char *module_name);
 
 const FunctionMeta *get_function_meta_from_modules(struct hashmap *map, const char *func_name);
 
-const Variable *get_variable_from_module(struct hashmap *map, char* var_name, char *module_name);
+const Variable *get_variable_from_module(struct hashmap *map, char *var_name, char *module_name);
 
 const Variable *get_variable_from_modules(struct hashmap *map, char *var_name);
 
@@ -69,8 +70,10 @@ void dispatch_string_array_to_void(void *func_ptr, void **args, void *ret_out);
 
 void dispatch_string_string_to_string(void *func_ptr, void **args, void *ret_out);
 
-void dispatch_string_double_double_to_double(void* fptr, void** args, void* ret_out);
+void dispatch_string_double_double_to_double(void *fptr, void **args, void *ret_out);
 
-void dispatch_string_double_to_double(void* fptr, void** args, void* ret_out);
+void dispatch_string_double_to_double(void *fptr, void **args, void *ret_out);
+
+void dispatch_string_to_double_array(void *fptr, void **args, void *ret_out);
 
 #endif

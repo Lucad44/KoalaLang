@@ -1,5 +1,6 @@
 # Custom
 *.kl
+*.csv
 
 # Prerequisites
 *.d
@@ -44,6 +45,8 @@
 *.su
 *.idb
 *.pdb
+callgrind.out.*
+vgcore.*
 
 # Kernel Module Compile Results
 *.mod*

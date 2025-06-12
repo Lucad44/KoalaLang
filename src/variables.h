@@ -2,7 +2,6 @@
 #define VARIABLES_H
 
 #include <stdint.h>
-
 #include "hashmap.h"
 
 struct ListNode;
@@ -15,8 +14,8 @@ typedef enum {
 
 typedef struct {
     VarType element_type;
-    VarType nested_element_type; // Type of elements in nested lists
-    bool is_nested;              // Whether this is a list of lists
+    VarType nested_element_type; 
+    bool is_nested;              
     struct ListNode *head;
 } NestedList;
 
@@ -25,7 +24,7 @@ typedef struct {
     union {
         double num_val;
         char *str_val;
-        NestedList nested_list;  // For lists of lists
+        NestedList nested_list;  
     } value;
 } ListElement;
 
@@ -40,8 +39,8 @@ typedef struct {
         char *str_val;
         struct {
             VarType element_type;
-            VarType nested_element_type; // Type of elements in nested lists
-            bool is_nested;              // Whether this is a list of lists
+            VarType nested_element_type; 
+            bool is_nested;              
             ListNode *head;
         } list_val;
     };

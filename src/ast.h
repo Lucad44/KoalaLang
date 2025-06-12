@@ -147,8 +147,8 @@ typedef struct {
 
 typedef struct {
     VarType element_type;
-    VarType nested_element_type; // Type of elements in nested lists
-    bool is_nested;              // Whether this is a list of lists
+    VarType nested_element_type;
+    bool is_nested;
     ASTNode **elements;
     int element_count;
 } ListLiteralNode;
@@ -156,23 +156,22 @@ typedef struct {
 typedef struct {
     char *name;
     VarType element_type;
-    VarType nested_element_type; // Type of elements in nested lists
-    bool is_nested_list;         // Whether this is a list of lists
+    VarType nested_element_type;
+    bool is_nested_list;
     ASTNode *init_expr;
 } ListDeclNode;
 
-
 typedef struct VariableAccessNode {
-    char *name;          // Variable name (NULL for nested access)
-    ASTNode *index_expr; // Index expression
-    ASTNode *parent_expr; // Parent expression for nested access
+    char *name;
+    ASTNode *index_expr;
+    ASTNode *parent_expr;
 } VariableAccessNode;
 
 typedef struct {
-    char *target_name;       // NULL for nested assignment
-    ASTNode *index_expr;     // First index (only used for simple assignments)
-    ASTNode *target_access;  // Used for nested access assignments
-    ASTNode *value_expr;     // The value to assign
+    char *target_name;
+    ASTNode *index_expr;
+    ASTNode *target_access;
+    ASTNode *value_expr;
 } AssignmentNode;
 
 typedef struct {
@@ -200,8 +199,10 @@ struct ASTNode {
         ReturnNode return_stmt;
         VariableAccessNode variable_access;
         AssignmentNode assignment;
-        ImportNode import;
-    } data;
+        ImportNode
+        import;
+    }
+    data;
 };
 
 #endif

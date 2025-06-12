@@ -3,7 +3,7 @@
 #include "memory.h"
 #include "ast.h"
 
-void* safe_malloc(const size_t size) {
+void *safe_malloc(const size_t size) {
     void *ptr = malloc(size);
     if (!ptr) {
         fprintf(stderr, "Memory allocation failed\n");
@@ -12,7 +12,8 @@ void* safe_malloc(const size_t size) {
     return ptr;
 }
 
-void* safe_calloc(const size_t num, const size_t size) {
+void *safe_calloc(const size_t num,
+    const size_t size) {
     void *ptr = calloc(num, size);
     if (!ptr) {
         fprintf(stderr, "Memory allocation failed\n");
@@ -21,7 +22,8 @@ void* safe_calloc(const size_t num, const size_t size) {
     return ptr;
 }
 
-void* safe_realloc(void *ptr, const size_t new_size) {
+void *safe_realloc(void *ptr,
+    const size_t new_size) {
     void *new_ptr = realloc(ptr, new_size);
     if (!new_ptr && new_size > 0) {
         fprintf(stderr, "Memory reallocation failed\n");
@@ -35,44 +37,44 @@ void free_ast(void *node) {
     if (!ast_node) return;
 
     switch (ast_node->type) {
-        case NODE_VAR_DECL:
-            free(ast_node->data.var_decl.name);
+    case NODE_VAR_DECL:
+        free(ast_node->data.var_decl.name);
         free_ast(ast_node->data.var_decl.init_expr);
-            break;
-        case NODE_PRINT:
-            for (int i = 0; i < ast_node->data.print.expr_count; i++) {
-                free_ast(ast_node->data.print.expr_list[i]);
-            }
+        break;
+    case NODE_PRINT:
+        for (int i = 0; i < ast_node->data.print.expr_count; i++) {
+            free_ast(ast_node->data.print.expr_list[i]);
+        }
         free(ast_node->data.print.expr_list);
-            break;
-        case NODE_BLOCK:
-            for (int i = 0; i < ast_node->data.block.stmt_count; i++) {
-                free_ast(ast_node->data.block.statements[i]);
-            }
+        break;
+    case NODE_BLOCK:
+        for (int i = 0; i < ast_node->data.block.stmt_count; i++) {
+            free_ast(ast_node->data.block.statements[i]);
+        }
         free(ast_node->data.block.statements);
-            break;
-        case NODE_STR_LITERAL:
-            free(ast_node->data.str_literal.str_val);
-            break;
-        case NODE_EXPR_VARIABLE:
-            free(ast_node->data.variable.name);
-            break;
-        case NODE_VARIABLE_ACCESS:
-            free(ast_node->data.variable_access.name);
-            free_ast(ast_node->data.variable_access.index_expr);
-            break;
-        case NODE_EXPR_UNARY:
-            free_ast(ast_node->data.unary_expr.operand);
-            break;
-        case NODE_ASSIGNMENT:
-            free(ast_node->data.assignment.target_name);
-            if (ast_node->data.assignment.index_expr != NULL) {
-                free_ast(ast_node->data.assignment.index_expr);
-            }
-            free_ast(ast_node->data.assignment.value_expr);
-            break;
-        default:
-            break;
+        break;
+    case NODE_STR_LITERAL:
+        free(ast_node->data.str_literal.str_val);
+        break;
+    case NODE_EXPR_VARIABLE:
+        free(ast_node->data.variable.name);
+        break;
+    case NODE_VARIABLE_ACCESS:
+        free(ast_node->data.variable_access.name);
+        free_ast(ast_node->data.variable_access.index_expr);
+        break;
+    case NODE_EXPR_UNARY:
+        free_ast(ast_node->data.unary_expr.operand);
+        break;
+    case NODE_ASSIGNMENT:
+        free(ast_node->data.assignment.target_name);
+        if (ast_node->data.assignment.index_expr != NULL) {
+            free_ast(ast_node->data.assignment.index_expr);
+        }
+        free_ast(ast_node->data.assignment.value_expr);
+        break;
+    default:
+        break;
     }
     free(ast_node);
 }

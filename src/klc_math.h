@@ -7,11 +7,20 @@
 #include <math.h>
 #include <string.h>
 
-static const char *colors[] = {
-    "red", "blue", "green", "magenta", "cyan", "orange", "black", "violet"
+static
+const char *colors[] = {
+    "red",
+    "blue",
+    "green",
+    "magenta",
+    "cyan",
+    "orange",
+    "black",
+    "violet"
 };
 
-static const int color_count = sizeof(colors) / sizeof(colors[0]);
+static
+const int color_count = sizeof(colors) / sizeof(colors[0]);
 
 int klc_is_positive(double n);
 
@@ -59,9 +68,13 @@ double klc_log2(double n);
 
 double klc_log(double n, double base);
 
-double klc_evaluate_function(const char* expr_str, double x);
+double klc_evaluate_function(const char *expr_str, double x);
 
-char *klc_integrate(const char *input_expr, const char *variable);
+char *klc_subtract_expressions(const char *a,
+    const char *b);
+
+char *klc_integrate(const char *input_expr,
+    const char *variable);
 
 double klc_definite_integral(const char *input_expr, double a, double b);
 
@@ -75,8 +88,14 @@ void klc_plot_csv(const char *csv_path);
 
 char *klc_simplify_expression(const char *input_expr);
 
-char *klc_differentiate(const char *input_expr, const char *variable);
+char *klc_differentiate(const char *input_expr,
+    const char *variable);
 
-char *klc_polynomial_division(const char *dividend_expr, const char *divisor_expr);
+char *klc_polynomial_division(const char *dividend_expr,
+    const char *divisor_expr);
+
+double klc_limit(const char *input_expr, double limit_point);
+
+double *klc_solve_equation(const char *input_expr);
 
 #endif

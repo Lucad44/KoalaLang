@@ -19,4 +19,4 @@ uint64_t function_hash(const void *item, uint64_t seed0, uint64_t seed1);
 
 bool function_iter(const void *item, void *udata);
 
-#endif //FUNCTIONS_H
+#endif

@@ -2,7 +2,6 @@
 #define INTERPRETER_H
 
 #include <setjmp.h>
-
 #include "ast.h"
 #include "variables.h"
 #include "hashmap.h"
@@ -16,16 +15,7 @@ typedef enum {
 
 typedef struct {
     ReturnType type;
-    union {
-        double num_val;
-        char *str_val;
-        struct {
-            VarType element_type;
-            VarType nested_element_type; // Type of elements in nested lists
-            bool is_nested;              // Whether this is a list of lists
-            ListNode *head;
-        } list_val;
-    } value;
+    VariableValue value;
 } ReturnValue;
 
 typedef struct {
@@ -77,4 +67,4 @@ ReturnValue evaluate_variable_access(const VariableAccessNode *node, struct hash
 
 void execute_import(const ImportNode *node);
 
-#endif //INTERPRETER_H
+#endif

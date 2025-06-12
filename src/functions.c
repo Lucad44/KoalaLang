@@ -9,13 +9,16 @@ static void __attribute__((constructor)) init_function_map() {
         function_hash, function_compare, NULL, NULL);
 }
 
-int function_compare(const void *a, const void *b, void *udata) {
+int function_compare(const void *a,
+    const void *b, void *udata) {
     const Function *fa = a;
     const Function *fb = b;
     return strcmp(fa->name, fb->name);
 }
 
-uint64_t function_hash(const void *item, const uint64_t seed0, const uint64_t seed1) {
+uint64_t function_hash(const void *item,
+    const uint64_t seed0,
+        const uint64_t seed1) {
     const Function *function = item;
     return hashmap_sip(function->name, strlen(function->name), seed0, seed1);
 }
